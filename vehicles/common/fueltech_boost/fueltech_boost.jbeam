@@ -1,0 +1,45 @@
+{
+"fueltech_boost_controller": {
+    "information":{
+        "authors":"Nelito",
+        "name":"FuelTech Boost Controller ECU",
+        "value":2500
+    },
+    "slotType" : "n2o_system",
+    "variables": [
+        ["name", "type", "unit", "category", "default", "min", "max", "title", "description"],
+        ["$fueltech_enabled", "range", "", "FuelTech Boost", 1, 0, 1, "Enable Boost Controller", "Master enable/disable toggle (0=Off, 1=On)", {"stepDis":1}],
+        ["$fueltech_rpm1", "range", "r/min", "FuelTech Boost", 2000, 1000, 9000, "RPM Point 1", "First RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost1", "range", "psi", "FuelTech Boost", 5, 0, 40, "Boost Target 1", "Target boost PSI at RPM Point 1", {"stepDis":0.5}],
+        ["$fueltech_rpm2", "range", "r/min", "FuelTech Boost", 3000, 1000, 9000, "RPM Point 2", "Second RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost2", "range", "psi", "FuelTech Boost", 10, 0, 40, "Boost Target 2", "Target boost PSI at RPM Point 2", {"stepDis":0.5}],
+        ["$fueltech_rpm3", "range", "r/min", "FuelTech Boost", 4000, 1000, 9000, "RPM Point 3", "Third RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost3", "range", "psi", "FuelTech Boost", 15, 0, 40, "Boost Target 3", "Target boost PSI at RPM Point 3", {"stepDis":0.5}],
+        ["$fueltech_rpm4", "range", "r/min", "FuelTech Boost", 5000, 1000, 9000, "RPM Point 4", "Fourth RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost4", "range", "psi", "FuelTech Boost", 20, 0, 40, "Boost Target 4", "Target boost PSI at RPM Point 4", {"stepDis":0.5}],
+        ["$fueltech_rpm5", "range", "r/min", "FuelTech Boost", 6000, 1000, 9000, "RPM Point 5", "Fifth RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost5", "range", "psi", "FuelTech Boost", 20, 0, 40, "Boost Target 5", "Target boost PSI at RPM Point 5", {"stepDis":0.5}],
+        ["$fueltech_rpm6", "range", "r/min", "FuelTech Boost", 7000, 1000, 9000, "RPM Point 6", "Sixth RPM breakpoint", {"stepDis":250}],
+        ["$fueltech_boost6", "range", "psi", "FuelTech Boost", 18, 0, 40, "Boost Target 6", "Target boost PSI at RPM Point 6", {"stepDis":0.5}]
+    ],
+    "controller": [
+        ["fileName"],
+        ["fueltechBoostController", {}]
+    ],
+    "fueltechBoostController": {
+        "enabled":"$fueltech_enabled",
+        "rpm1":"$fueltech_rpm1",
+        "boost1":"$fueltech_boost1",
+        "rpm2":"$fueltech_rpm2",
+        "boost2":"$fueltech_boost2",
+        "rpm3":"$fueltech_rpm3",
+        "boost3":"$fueltech_boost3",
+        "rpm4":"$fueltech_rpm4",
+        "boost4":"$fueltech_boost4",
+        "rpm5":"$fueltech_rpm5",
+        "boost5":"$fueltech_boost5",
+        "rpm6":"$fueltech_rpm6",
+        "boost6":"$fueltech_boost6"
+    }
+}
+}

@@ -1,0 +1,10 @@
+{
+    "title": "FuelTech Boost Controller",
+    "tagid": "fueltech_boost",
+    "version_string": "1.0.0",
+    "tag_line": "FuelTech-inspired boost-by-RPM controller with configurable boost targets per RPM range.",
+    "username": "Nelito",
+    "message": "FuelTech Boost Controller\n\nA boost-by-RPM controller inspired by FuelTech standalone ECUs. Set boost pressure targets at 6 RPM breakpoints with linear interpolation for smooth transitions.\n\nFeatures:\n- 6 configurable RPM breakpoints\n- Adjustable boost target (PSI) at each breakpoint\n- Master enable/disable toggle\n- Linear interpolation between RPM points\n- Works with any turbocharged vehicle\n\nTo use: Select in vehicle config under Additional Modification slot.",
+    "resource_category_id": 7,
+    "category_title": "Vehicle Mods"
+}

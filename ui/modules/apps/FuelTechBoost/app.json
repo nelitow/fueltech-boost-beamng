@@ -1,0 +1,20 @@
+{
+  "domElement": "<fuel-tech-boost></fuel-tech-boost>",
+  "directive": "fuelTechBoost",
+  "name": "FuelTech Boost Controller",
+  "types": ["ui.apps.categories.vehicle_info"],
+  "description": "FuelTech-inspired boost controller display with live boost map graph, RPM, boost and target gauges.",
+  "author": "Nelito",
+  "version": "1.1",
+  "category": "Engine",
+  "css": {
+    "left": "20px",
+    "top": "20px",
+    "width": "300px",
+    "height": "340px",
+    "min-width": "220px",
+    "min-height": "240px"
+  },
+  "preserveAspectRatio": false,
+  "interactive": "yes"
+}

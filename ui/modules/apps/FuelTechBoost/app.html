@@ -1,0 +1,30 @@
+<div class="ft">
+  <!-- Top: 3 gauges -->
+  <div class="ft-meters">
+    <div class="ft-m">
+      <div class="ft-m-v ft-grn">{{rpmStr}}</div>
+      <div class="ft-m-l">RPM</div>
+    </div>
+    <div class="ft-m ft-m-main">
+      <div class="ft-m-v ft-cyn">{{boostStr}}</div>
+      <div class="ft-m-l">BOOST <span class="ft-m-u">PSI</span></div>
+    </div>
+    <div class="ft-m">
+      <div class="ft-m-v ft-org">{{tgtStr}}</div>
+      <div class="ft-m-l">TARGET <span class="ft-m-u">PSI</span></div>
+    </div>
+  </div>
+
+  <!-- Boost map graph (interactive) -->
+  <div class="ft-chart"><canvas class="ft-cv ft-cv-boost"></canvas></div>
+
+  <!-- Power/Torque graph -->
+  <div class="ft-chart"><canvas class="ft-cv ft-cv-power"></canvas></div>
+
+  <!-- Bottom status -->
+  <div class="ft-foot">
+    <div class="ft-dot" ng-class="active ? 'on' : 'off'"></div>
+    <span class="ft-brand">FUELTECH</span>
+    <span class="ft-state">{{active ? 'ACTIVE' : 'STANDBY'}}</span>
+  </div>
+</div>
