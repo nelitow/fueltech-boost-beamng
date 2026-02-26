@@ -1,30 +1,50 @@
-<div class="ft">
-  <!-- Top: 3 gauges -->
-  <div class="ft-meters">
-    <div class="ft-m">
-      <div class="ft-m-v ft-grn">{{rpmStr}}</div>
-      <div class="ft-m-l">RPM</div>
-    </div>
-    <div class="ft-m ft-m-main">
-      <div class="ft-m-v ft-cyn">{{boostStr}}</div>
-      <div class="ft-m-l">BOOST <span class="ft-m-u">PSI</span></div>
-    </div>
-    <div class="ft-m">
-      <div class="ft-m-v ft-org">{{tgtStr}}</div>
-      <div class="ft-m-l">TARGET <span class="ft-m-u">PSI</span></div>
+<div class="ft" style="width:100%;height:100%">
+  <link type="text/css" rel="stylesheet" href="/ui/modules/apps/FuelTechBoost/app.css" />
+
+  <!-- Top header bar -->
+  <div class="ft-hdr">
+    <span class="ft-brand">FUELTECH</span>
+    <span class="ft-hdr-boost" ng-class="overboost?'ft-red ft-blink':''">{{boostStr}} PSI</span>
+    <span class="ft-hdr-sep">|</span>
+    <span class="ft-hdr-tgt">TGT {{tgtStr}}</span>
+    <span style="flex:1"></span>
+    <span class="ft-peak" ng-click="resetPeak()">PK {{peakStr}}</span>
+    <span class="ft-hdr-sep">|</span>
+    <span class="ft-toggle" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
+    <span class="ft-dot" ng-class="active?'on':'off'"></span>
+    <span class="ft-hdr-state">{{active?'ACTIVE':'STANDBY'}}</span>
+  </div>
+
+  <!-- Right side: RPM gauge on top, Boost gauge below -->
+  <div class="ft-cell ft-c-rpm"><canvas class="ft-cv ft-cv-rpm"></canvas></div>
+  <div class="ft-cell ft-c-bst"><canvas class="ft-cv ft-cv-bst"></canvas></div>
+
+  <!-- Center: Speed + Gear -->
+  <div class="ft-cell ft-c-spd">
+    <div class="ft-spd">{{speedStr}}</div>
+    <div class="ft-spd-u">KM/H</div>
+    <div style="margin-top:4px;display:flex;align-items:baseline;gap:6px">
+      <span class="ft-gear-l">GEAR</span>
+      <span class="ft-gear-v">{{gearStr}}</span>
     </div>
   </div>
 
-  <!-- Boost map graph (interactive) -->
-  <div class="ft-chart"><canvas class="ft-cv ft-cv-boost"></canvas></div>
+  <!-- Bottom left: small mini-gauges row -->
+  <div class="ft-cell ft-c-oil"><canvas class="ft-cv ft-cv-oil"></canvas></div>
+  <div class="ft-cell ft-c-h2o"><canvas class="ft-cv ft-cv-h2o"></canvas></div>
+  <div class="ft-cell ft-c-thr"><canvas class="ft-cv ft-cv-thr"></canvas></div>
+  <div class="ft-cell ft-c-trb"><canvas class="ft-cv ft-cv-trb"></canvas></div>
 
-  <!-- Power/Torque graph -->
-  <div class="ft-chart"><canvas class="ft-cv ft-cv-power"></canvas></div>
+  <!-- Bottom center: small graphs -->
+  <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
+  <div class="ft-cell ft-c-pwr"><canvas class="ft-cv ft-cv-pwr"></canvas></div>
 
-  <!-- Bottom status -->
-  <div class="ft-foot">
-    <div class="ft-dot" ng-class="active ? 'on' : 'off'"></div>
-    <span class="ft-brand">FUELTECH</span>
-    <span class="ft-state">{{active ? 'ACTIVE' : 'STANDBY'}}</span>
+  <!-- Bottom: preset buttons -->
+  <div class="ft-bar">
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='LOW'}" ng-click="setPreset('LOW')" style="flex:1">LOW</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='STREET'}" ng-click="setPreset('STREET')" style="flex:1">STREET</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='SPORT'}" ng-click="setPreset('SPORT')" style="flex:1">SPORT</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='RACE'}" ng-click="setPreset('RACE')" style="flex:1">RACE</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" style="flex:1">CUSTOM</div>
   </div>
 </div>

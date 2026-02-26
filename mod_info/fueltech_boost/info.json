@@ -1,10 +1,10 @@
 {
-    "title": "FuelTech Boost Controller",
+    "title": "FuelTech Boost Controller & Dashboard",
     "tagid": "fueltech_boost",
-    "version_string": "1.0.0",
-    "tag_line": "FuelTech-inspired boost-by-RPM controller with configurable boost targets per RPM range.",
+    "version_string": "4.0.0",
+    "tag_line": "FuelTech-inspired boost controller with full racing HUD dashboard, interactive boost maps, power curves, and telemetry gauges.",
     "username": "Nelito",
-    "message": "FuelTech Boost Controller\n\nA boost-by-RPM controller inspired by FuelTech standalone ECUs. Set boost pressure targets at 6 RPM breakpoints with linear interpolation for smooth transitions.\n\nFeatures:\n- 6 configurable RPM breakpoints\n- Adjustable boost target (PSI) at each breakpoint\n- Master enable/disable toggle\n- Linear interpolation between RPM points\n- Works with any turbocharged vehicle\n\nTo use: Select in vehicle config under Additional Modification slot.",
+    "message": "FuelTech Boost Controller & Dashboard\n\nA boost-by-RPM controller and full-screen racing HUD inspired by FuelTech standalone ECUs.\n\nFeatures:\n- Boost-by-RPM table with 6 configurable breakpoints and linear interpolation\n- 4 built-in presets: LOW, STREET, SPORT, RACE\n- Interactive boost map — drag breakpoints to tune in real-time\n- Power/Torque graph showing projected vs stock curves (HP)\n- Engine torque limit indicator — see when you're exceeding safe torque\n- Circular RPM and Boost gauges (right side)\n- Mini gauges for Oil Temp, Water Temp, Throttle, Turbo RPM\n- Digital Speed and Gear display\n- Toggle to show/hide graphs for a clean view\n- Transparent HUD overlay — see the game through the dashboard\n- Peak boost tracking with overboost warning\n- Works with any turbocharged vehicle\n\nInstallation:\n1. Place in mods/unpacked/ or zip and place in mods/\n2. Launch game, load any turbocharged vehicle\n3. Open vehicle config, select FuelTech Boost Controller under Additional Modification\n4. Open the FuelTech Dashboard app via the UI apps menu\n5. Select a preset or drag boost map points to tune\n\nControls:\n- Click preset buttons to switch boost maps\n- Drag breakpoints on the boost map to custom tune\n- Click PK to reset peak boost\n- Click SHOW/HIDE GRAPHS to toggle graph visibility",
     "resource_category_id": 7,
     "category_title": "Vehicle Mods"
 }

@@ -10,9 +10,18 @@ local engine = nil
 local enabled = false
 local hasTurbo = false
 local baseWastegate = 0
+local currentPreset = "CUSTOM"
 
 -- RPM/boost table: sorted pairs of {rpm, boostPSI}
 local boostTable = {}
+
+-- Preset boost maps
+local presets = {
+  LOW    = {{2000, 4}, {3000, 6}, {4000, 8}, {5000, 10}, {6000, 8}, {7000, 6}},
+  STREET = {{2000, 5}, {3000, 10}, {4000, 15}, {5000, 18}, {6000, 18}, {7000, 15}},
+  SPORT  = {{2000, 8}, {3000, 14}, {4000, 22}, {5000, 26}, {6000, 26}, {7000, 22}},
+  RACE   = {{2000, 10}, {3000, 18}, {4000, 28}, {5000, 35}, {6000, 35}, {7000, 30}},
+}
 
 local function lerp(a, b, t)
   return a + (b - a) * t
@@ -21,18 +30,8 @@ end
 -- Linear interpolation of boost target from RPM table
 local function getTargetBoost(rpm)
   if #boostTable == 0 then return baseWastegate end
-
-  -- Below first breakpoint: use first value
-  if rpm <= boostTable[1][1] then
-    return boostTable[1][2]
-  end
-
-  -- Above last breakpoint: use last value
-  if rpm >= boostTable[#boostTable][1] then
-    return boostTable[#boostTable][2]
-  end
-
-  -- Find surrounding breakpoints and interpolate
+  if rpm <= boostTable[1][1] then return boostTable[1][2] end
+  if rpm >= boostTable[#boostTable][1] then return boostTable[#boostTable][2] end
   for i = 1, #boostTable - 1 do
     local rpmLow = boostTable[i][1]
     local rpmHigh = boostTable[i + 1][1]
@@ -41,7 +40,6 @@ local function getTargetBoost(rpm)
       return lerp(boostTable[i][2], boostTable[i + 1][2], t)
     end
   end
-
   return baseWastegate
 end
 
@@ -55,12 +53,8 @@ local function updateGFX(dt)
   local currentRPM = engine.outputRPM or 0
   local targetPSI = getTargetBoost(currentRPM)
 
-  -- setWastegateOffset takes PSI offset from zero
-  -- To achieve our target, we offset by: -baseWastegate + targetPSI
-  -- This cancels the stock wastegate and replaces it with our target
   engine.turbocharger.setWastegateOffset(-baseWastegate + targetPSI)
 
-  -- Expose values to electrics for UI
   electrics.values.fueltech_targetBoost = targetPSI
   electrics.values.fueltech_currentBoost = electrics.values.turboBoost or 0
   electrics.values.fueltech_active = 1
@@ -77,7 +71,6 @@ local function init(jbeamData)
     return
   end
 
-  -- Read turbocharger data from vehicle jbeam to get the base wastegate value
   local turboData = v.data[engineName] and v.data[engineName].turbocharger
   if turboData then
     local turboJbeam = v.data[turboData]
@@ -90,7 +83,6 @@ local function init(jbeamData)
     end
   end
 
-  -- Check if the engine actually has a turbocharger
   if engine.turbocharger and engine.turbocharger.isExisting then
     hasTurbo = true
   else
@@ -100,22 +92,19 @@ local function init(jbeamData)
     return
   end
 
-  -- Read enable flag
   enabled = (jbeamData.enabled or 1) >= 1
 
-  -- Build the RPM/boost table from jbeamData
   boostTable = {}
-  local numPoints = 6
-  for i = 1, numPoints do
+  for i = 1, 6 do
     local rpm = jbeamData["rpm" .. i]
     local boost = jbeamData["boost" .. i]
     if rpm and boost then
       table.insert(boostTable, {rpm, boost})
     end
   end
-
-  -- Sort table by RPM ascending
   table.sort(boostTable, function(a, b) return a[1] < b[1] end)
+
+  currentPreset = "CUSTOM"
 
   if enabled and hasTurbo then
     M.updateGFX = updateGFX
@@ -133,16 +122,15 @@ local function reset()
   end
 end
 
--- Called from UI to update a single breakpoint
 local function setPoint(index, rpmVal, psiVal)
   if index >= 1 and index <= #boostTable then
     boostTable[index][1] = rpmVal
     boostTable[index][2] = psiVal
     table.sort(boostTable, function(a, b) return a[1] < b[1] end)
+    currentPreset = "CUSTOM"
   end
 end
 
--- Called from UI to get the current table (serialized as JSON-friendly)
 local function getBoostTable()
   local result = {}
   for i = 1, #boostTable do
@@ -151,20 +139,36 @@ local function getBoostTable()
   guihooks.trigger("fueltechBoostTable", result)
 end
 
--- Send projected torque/power curves to the UI based on current boost map
 local function sendPowerCurves()
   if not engine or not hasTurbo then return end
 
-  local psiToPascal = 6894.757293178
-  local avToRPM = 9.5493
-
-  -- Get the turbo's torque coefficient function (maps RPM to boost multiplier)
   local turboCoefs = {}
   if engine.turbocharger.getTorqueCoefs then
     turboCoefs = engine.turbocharger.getTorqueCoefs()
   end
 
-  -- Build curves: sample every 250 RPM
+  -- Get engine torque data for peak torque and damage limits
+  local peakTorqueNm = 0
+  local peakTorqueRPM = 0
+  local peakPowerKw = 0
+  local peakPowerRPM = 0
+  local maxTorqueRating = -1  -- soft damage limit (-1 means no limit)
+
+  if engine.getTorqueData then
+    local td = engine:getTorqueData()
+    if td then
+      peakTorqueNm = td.maxTorque or 0
+      peakTorqueRPM = td.maxTorqueRPM or 0
+      peakPowerKw = td.maxPower or 0
+      peakPowerRPM = td.maxPowerRPM or 0
+    end
+  end
+
+  -- maxTorqueRating is the soft damage threshold from jbeam
+  if engine.maxTorqueRating and engine.maxTorqueRating > 0 then
+    maxTorqueRating = engine.maxTorqueRating
+  end
+
   local torqueCurve = {}
   local powerCurve = {}
   local baseTorqueCurve = {}
@@ -172,26 +176,20 @@ local function sendPowerCurves()
   local maxEngRPM = engine.maxRPM or 7000
   local idx = 0
 
+  local projPeakTorque = 0
+  local projPeakHP = 0
+
   for rpmVal = 500, maxEngRPM, 250 do
-    -- Base torque (without any forced induction modification from our map)
     local baseTorque = 0
     if engine.torqueCurve and engine.torqueCurve[rpmVal] then
       baseTorque = engine.torqueCurve[rpmVal]
     end
 
-    -- Stock turbo coef at this RPM
     local stockCoef = turboCoefs[rpmVal + 1] or 1
-
-    -- Base torque with stock turbo
     local stockTorque = baseTorque * stockCoef
-
-    -- Our boost target at this RPM
     local ourBoostPSI = getTargetBoost(rpmVal)
-    -- Stock boost is roughly baseWastegate
     local stockBoostPSI = baseWastegate
 
-    -- Approximate: each PSI adds ~6% power (from turbocharger.lua: 1 + 0.0000087 * pascals * efficiency)
-    -- The ratio of our coef to stock coef
     local boostRatio = 1
     if stockBoostPSI > 0 then
       boostRatio = ourBoostPSI / stockBoostPSI
@@ -200,14 +198,19 @@ local function sendPowerCurves()
     end
 
     local projTorque = stockTorque * boostRatio
-    local projPower = projTorque * rpmVal * 0.10471975 / 1000 -- kW
-    local stockPower = stockTorque * rpmVal * 0.10471975 / 1000
+    local projPowerKw = projTorque * rpmVal * 0.10471975 / 1000
+    local stockPowerKw = stockTorque * rpmVal * 0.10471975 / 1000
+
+    -- Track projected peaks
+    if projTorque > projPeakTorque then projPeakTorque = projTorque end
+    local projHP = projPowerKw * 1.34102
+    if projHP > projPeakHP then projPeakHP = projHP end
 
     idx = idx + 1
     torqueCurve[idx] = { rpm = rpmVal, nm = math.floor(projTorque) }
-    powerCurve[idx]  = { rpm = rpmVal, kw = math.floor(projPower) }
+    powerCurve[idx]  = { rpm = rpmVal, hp = math.floor(projPowerKw * 1.34102) }
     baseTorqueCurve[idx] = { rpm = rpmVal, nm = math.floor(stockTorque) }
-    basePowerCurve[idx]  = { rpm = rpmVal, kw = math.floor(stockPower) }
+    basePowerCurve[idx]  = { rpm = rpmVal, hp = math.floor(stockPowerKw * 1.34102) }
   end
 
   guihooks.trigger("fueltechPowerCurves", {
@@ -215,8 +218,30 @@ local function sendPowerCurves()
     power = powerCurve,
     baseTorque = baseTorqueCurve,
     basePower = basePowerCurve,
-    maxRPM = maxEngRPM
+    maxRPM = maxEngRPM,
+    -- Engine limits for the UI to display
+    stockPeakTorque = math.floor(peakTorqueNm),
+    stockPeakTorqueRPM = math.floor(peakTorqueRPM),
+    stockPeakPowerHP = math.floor((peakPowerKw or 0) * 1.34102),
+    stockPeakPowerRPM = math.floor(peakPowerRPM),
+    maxTorqueRating = math.floor(maxTorqueRating),
+    projPeakTorque = math.floor(projPeakTorque),
+    projPeakHP = math.floor(projPeakHP)
   })
+end
+
+-- Called from UI to apply a preset boost map
+local function setPreset(name)
+  if presets[name] then
+    boostTable = {}
+    for i, pt in ipairs(presets[name]) do
+      boostTable[i] = {pt[1], pt[2]}
+    end
+    currentPreset = name
+    log("I", "fueltechBoost", "Applied preset: " .. name)
+    getBoostTable()
+    sendPowerCurves()
+  end
 end
 
 M.init = init
@@ -225,5 +250,6 @@ M.updateGFX = nop
 M.setPoint = setPoint
 M.getBoostTable = getBoostTable
 M.sendPowerCurves = sendPowerCurves
+M.setPreset = setPreset
 
 return M
