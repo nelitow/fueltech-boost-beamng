@@ -4,20 +4,32 @@
   <!-- Top header bar -->
   <div class="ft-hdr">
     <span class="ft-brand">FUELTECH</span>
-    <span class="ft-hdr-boost" ng-class="overboost?'ft-red ft-blink':''">{{boostStr}} PSI</span>
-    <span class="ft-hdr-sep">|</span>
-    <span class="ft-hdr-tgt">TGT {{tgtStr}}</span>
+    <span class="ft-hdr-boost" ng-if="hasTurbo" ng-class="overboost?'ft-red ft-blink':''">{{boostStr}} PSI</span>
+    <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
+    <span class="ft-hdr-tgt" ng-if="hasTurbo">TGT {{tgtStr}}</span>
     <span style="flex:1"></span>
-    <span class="ft-peak" ng-click="resetPeak()">PK {{peakStr}}</span>
+    <span class="ft-peak" ng-if="hasTurbo" ng-click="resetPeak()">PK {{peakStr}}</span>
+    <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
+    <span class="ft-peak" ng-click="resetPeakRpm()">RPM PK {{peakRpmStr}}</span>
     <span class="ft-hdr-sep">|</span>
     <span class="ft-toggle" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
-    <span class="ft-dot" ng-class="active?'on':'off'"></span>
-    <span class="ft-hdr-state">{{active?'ACTIVE':'STANDBY'}}</span>
+    <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
+    <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
+    <span class="ft-ver">v5.9</span>
   </div>
 
-  <!-- Right side: RPM gauge on top, Boost gauge below -->
+  <!-- Warning bar -->
+  <div class="ft-warn" ng-if="warnings.length">
+    <span class="ft-warn-item ft-blink" ng-repeat="w in warnings">{{w}}</span>
+  </div>
+
+  <!-- Shift light overlay -->
+  <div class="ft-shift" ng-if="shiftLight" ng-class="{'ft-shift-on': shiftLight}"></div>
+
+  <!-- Right side: RPM gauge on top, Boost + Turbo RPM side by side below -->
   <div class="ft-cell ft-c-rpm"><canvas class="ft-cv ft-cv-rpm"></canvas></div>
   <div class="ft-cell ft-c-bst"><canvas class="ft-cv ft-cv-bst"></canvas></div>
+  <div class="ft-cell ft-c-trb"><canvas class="ft-cv ft-cv-trb"></canvas></div>
 
   <!-- Center: Speed + Gear -->
   <div class="ft-cell ft-c-spd">
@@ -25,15 +37,38 @@
     <div class="ft-spd-u">KM/H</div>
     <div style="margin-top:4px;display:flex;align-items:baseline;gap:6px">
       <span class="ft-gear-l">GEAR</span>
-      <span class="ft-gear-v">{{gearStr}}</span>
+      <span class="ft-gear-v" ng-class="{'ft-shift-gear': shiftLight}">{{gearStr}}</span>
+    </div>
+    <div class="ft-dt" ng-if="dtFeatures.length">
+      <span class="ft-dt-btn" ng-repeat="f in dtFeatures"
+            ng-click="toggleDt(f)" ng-class="{'ft-dt-on': f.active}">
+        {{f.label}}: {{f.modeLabel}}
+      </span>
     </div>
   </div>
+
+  <!-- Drag timer -->
+  <div class="ft-cell ft-c-drag" ng-if="showGraphs">
+    <div class="ft-drag-title">DRAG TIMER</div>
+    <div class="ft-drag-row">
+      <span class="ft-drag-label">0-100</span>
+      <span class="ft-drag-time" ng-class="{'ft-drag-done': drag100done}">{{drag100str}}</span>
+    </div>
+    <div class="ft-drag-row">
+      <span class="ft-drag-label">0-200</span>
+      <span class="ft-drag-time" ng-class="{'ft-drag-done': drag200done}">{{drag200str}}</span>
+    </div>
+    <div class="ft-drag-reset" ng-click="resetDrag()">RESET</div>
+  </div>
+
+  <!-- G-Force display -->
+  <div class="ft-cell ft-c-gforce"><canvas class="ft-cv ft-cv-gforce"></canvas></div>
 
   <!-- Bottom left: small mini-gauges row -->
   <div class="ft-cell ft-c-oil"><canvas class="ft-cv ft-cv-oil"></canvas></div>
   <div class="ft-cell ft-c-h2o"><canvas class="ft-cv ft-cv-h2o"></canvas></div>
   <div class="ft-cell ft-c-thr"><canvas class="ft-cv ft-cv-thr"></canvas></div>
-  <div class="ft-cell ft-c-trb"><canvas class="ft-cv ft-cv-trb"></canvas></div>
+  <div class="ft-cell ft-c-egt"><canvas class="ft-cv ft-cv-egt"></canvas></div>
 
   <!-- Bottom center: small graphs -->
   <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
@@ -41,10 +76,15 @@
 
   <!-- Bottom: preset buttons -->
   <div class="ft-bar">
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='LOW'}" ng-click="setPreset('LOW')" style="flex:1">LOW</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='STREET'}" ng-click="setPreset('STREET')" style="flex:1">STREET</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='SPORT'}" ng-click="setPreset('SPORT')" style="flex:1">SPORT</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='RACE'}" ng-click="setPreset('RACE')" style="flex:1">RACE</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" style="flex:1">CUSTOM</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='MIN'}" ng-click="setPreset('MIN')" style="flex:1">MIN</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='MAX'}" ng-click="setPreset('MAX')" style="flex:1">MAX</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='AUTOMAX'}" ng-click="setPreset('AUTOMAX')" style="flex:1">AUTO MAX</div>
+    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" ng-click="setPreset('CUSTOM')" style="flex:1">CUSTOM</div>
+  </div>
+
+  <!-- Turbo timer overlay -->
+  <div class="ft-turbo-timer" ng-if="hasTurbo && turboTimerActive">
+    <div class="ft-turbo-timer-label">TURBO COOLDOWN</div>
+    <div class="ft-turbo-timer-val">{{turboTimerStr}}</div>
   </div>
 </div>

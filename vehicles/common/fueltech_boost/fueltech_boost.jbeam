@@ -24,7 +24,8 @@
     ],
     "controller": [
         ["fileName"],
-        ["fueltechBoostController", {}]
+        ["fueltechBoostController", {}],
+        ["fueltechDrivetrain", {}]
     ],
     "fueltechBoostController": {
         "enabled":"$fueltech_enabled",
