@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from app.html
+        id: version
+        run: |
+          VER=$(grep -oP 'v[\d.]+' ui/modules/apps/FuelTechBoost/app.html | head -1)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Found version: $VER"
+
+      - name: Check if release already exists
+        id: check
+        run: |
+          if gh release view "${{ steps.version.outputs.version }}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog
+        if: steps.check.outputs.exists == 'false'
+        id: changelog
+        run: |
+          # Get the previous release tag, or use initial commit if none
+          PREV_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)
+          if [ -z "$PREV_TAG" ]; then
+            # No previous release — use all commits
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
+          fi
+
+          # Write to file for the release body
+          {
+            echo "# FuelTech Boost Controller ${{ steps.version.outputs.version }}"
+            echo ""
+            echo "BeamNG.drive boost controller dashboard mod."
+            echo ""
+            echo "## Installation"
+            echo "1. Download \`fueltech_boost_controller.zip\` below"
+            echo "2. Extract into \`%LocalAppData%\\BeamNG\\BeamNG.drive\\<version>\\mods\\unpacked\\\`"
+            echo "3. Launch BeamNG and add **FuelTech Dashboard** from UI Apps"
+            echo ""
+            echo "## Changelog"
+            echo "$LOG"
+          } > release_notes.md
+
+          cat release_notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create mod zip
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p dist
+          zip -r dist/fueltech_boost_controller.zip \
+            lua/ \
+            ui/ \
+            vehicles/ \
+            mod_info/ \
+            README.md \
+            -x "*.git*"
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            dist/fueltech_boost_controller.zip \
+            --title "FuelTech Boost Controller ${{ steps.version.outputs.version }}" \
+            --notes-file release_notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
