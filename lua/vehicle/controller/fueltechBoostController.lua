@@ -88,6 +88,11 @@ local KP = 1.0    -- proportional gain
 local KI = 3.0    -- integral gain (converges on target over time)
 local IMAX = 30   -- anti-windup clamp
 
+-- Safety: boost cut thresholds
+local WATER_TEMP_CUT = 115   -- °C — cut boost above this coolant temp
+local OIL_TEMP_CUT = 135     -- °C — cut boost above this oil temp
+local safetyCut = false
+
 local function updateGFX(dt)
   if not enabled or not engine or not hasTurbo then
     electrics.values.fueltech_active = 0
@@ -120,8 +125,23 @@ local function updateGFX(dt)
 
   local actualBoost = electrics.values.turboBoost or 0
 
-  -- Publish turbo max for UI
+  -- Safety: cut boost if coolant or oil temp too high
+  local waterT = electrics.values.watertemp or 0
+  local oilT = electrics.values.oiltemp or 0
+  if waterT > WATER_TEMP_CUT or oilT > OIL_TEMP_CUT then
+    safetyCut = true
+  elseif waterT < (WATER_TEMP_CUT - 5) and oilT < (OIL_TEMP_CUT - 5) then
+    -- 5°C hysteresis before re-enabling
+    safetyCut = false
+  end
+
+  if safetyCut then
+    targetPSI = 0
+  end
+
+  -- Publish turbo max and safety state for UI
   electrics.values.fueltech_boostMax = turboMax
+  electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
 
   -- Closed-loop PI controller: adjust offset based on error between target and actual
   if currentRPM > 1500 and targetPSI > 0 then

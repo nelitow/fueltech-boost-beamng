@@ -729,11 +729,14 @@ angular.module('beamng.apps')
       }
 
       /* ==================== WARNINGS ==================== */
+      var safetyCut = false, lastElectrics = null
       function updateWarnings () {
         var w = []
+        safetyCut = !!(lastElectrics && lastElectrics.fueltech_safetyCut)
+        if (safetyCut) w.push('BOOST CUT — OVERTEMP')
         if (oilT > 130) w.push('OIL TEMP ' + Math.round(oilT) + '°C')
         if (h2oT > 110) w.push('COOLANT ' + Math.round(h2oT) + '°C')
-        if (scope.overboost) w.push('OVERBOOST')
+        if (scope.overboost && !safetyCut) w.push('OVERBOOST')
         if (egt > 850) w.push('EGT ' + Math.round(egt) + '°C')
         scope.warnings = w
       }
@@ -809,6 +812,7 @@ angular.module('beamng.apps')
         scope.$evalAsync(function () {
           if (s.engineInfo) { rpm = s.engineInfo[4]||0; if (s.engineInfo[1]&&s.engineInfo[1]>1000) maxRPM = s.engineInfo[1] }
           if (s.electrics) {
+            lastElectrics = s.electrics
             boost=s.electrics.turboBoost||0; tgt=s.electrics.fueltech_targetBoost||0; boostMax=s.electrics.fueltech_boostMax||s.electrics.turboBoostMax||s.electrics.boostMax||0
             speed=(s.electrics.wheelspeed||s.electrics.airspeed||0)*3.6
             oilT=s.electrics.oiltemp||0; h2oT=s.electrics.watertemp||0
@@ -884,7 +888,7 @@ angular.module('beamng.apps')
           scope.exhFlowStr=exhFlow.toFixed(1)
           scope.clutchStr=Math.round((1-clutchPos)*100).toString()
           scope.altStr=Math.round(altitude).toString()
-          scope.odoStr=odometer.toFixed(1)
+          scope.odoStr=(odometer/1000).toFixed(1)
           scope.cel=cel; scope.lowFuel=lowFuel
 
           if (!lay) {
