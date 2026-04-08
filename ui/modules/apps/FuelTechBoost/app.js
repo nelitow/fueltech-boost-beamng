@@ -270,11 +270,11 @@ angular.module('beamng.apps')
         var h2oEl = q('.ft-c-h2o')
         if (h2oEl) h2oEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+halfW+GAP)+'px;top:'+ohY+'px;width:'+halfW+'px;height:'+ohH+'px;overflow:hidden'
 
-        // G-Force: rows 2-4, cols 1-2
-        gridBox(q('.ft-c-gforce'), 1, 2, 2, 3)
+        // G-Force: rows 2-3, cols 1-2
+        gridBox(q('.ft-c-gforce'), 1, 2, 2, 2)
 
-        // Drag Timer: rows 5-6, cols 1-2
-        gridBox(q('.ft-c-drag'), 1, 5, 2, 2,
+        // Drag Timer: rows 4-5, cols 1-2
+        gridBox(q('.ft-c-drag'), 1, 4, 2, 2,
           'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG.replace('background:', 'background:'))
 
         // THR: rows 7-8, cols 1-2
@@ -313,7 +313,7 @@ angular.module('beamng.apps')
         var mapH = 3 * ch - GAP
         var pwrW = 3 * cw - GAP
         var gfW = 2 * cw - GAP
-        var gfH = 3 * ch - GAP
+        var gfH = 2 * ch - GAP
 
         lay = {
           gaugeW: gaugeW, gaugeH: gaugeH,
@@ -481,37 +481,30 @@ angular.module('beamng.apps')
         var w = sz.w, h = sz.h, ctx = ctxGf
         ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h)
 
-        var cx = w/2, cy = h*0.45, r = Math.min(w,h)*0.3
+        var fs = cl(Math.min(w,h)*0.1, 7, 11)
+        var cx = w/2, cy = h/2 - fs*0.6
+        var r = Math.min(w,h)*0.4
         var maxG = 2.0
 
-        // Circle outline
-        ctx.beginPath(); ctx.arc(cx,cy,r,0,6.283)
-        ctx.strokeStyle='#2a3048'; ctx.lineWidth=1; ctx.stroke()
+        // Circle + crosshairs + 1G ring
+        ctx.strokeStyle='#2a3048'; ctx.lineWidth=0.5
+        ctx.beginPath(); ctx.arc(cx,cy,r,0,6.283); ctx.lineWidth=1; ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(cx-r,cy); ctx.lineTo(cx+r,cy); ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r); ctx.stroke()
+        ctx.beginPath(); ctx.arc(cx,cy,r*0.5,0,6.283); ctx.stroke()
 
-        // Cross hairs
-        ctx.beginPath(); ctx.moveTo(cx-r,cy); ctx.lineTo(cx+r,cy); ctx.moveTo(cx,cy-r); ctx.lineTo(cx,cy+r)
-        ctx.strokeStyle='#2a3048'; ctx.lineWidth=0.5; ctx.stroke()
-
-        // Inner rings at 1G and 0.5G
-        ctx.beginPath(); ctx.arc(cx,cy,r*0.5,0,6.283); ctx.strokeStyle='#2a3048'; ctx.lineWidth=0.5; ctx.stroke()
-        ctx.beginPath(); ctx.arc(cx,cy,r*0.25,0,6.283); ctx.strokeStyle='#2a3048'; ctx.lineWidth=0.5; ctx.stroke()
-
-        // G-force dot
+        // Dot
         var gx = cl(gForceX/maxG, -1, 1) * r
         var gy = cl(-gForceY/maxG, -1, 1) * r
         var gMag = Math.sqrt(gForceX*gForceX + gForceY*gForceY)
         var dotC = gMag < 0.5 ? '#00ff88' : gMag < 1.2 ? '#ffcc00' : '#ff2244'
-        var dotR = cl(r*0.08, 3, 8)
-
+        var dotR = cl(r*0.07, 2, 6)
         ctx.shadowColor = dotC; ctx.shadowBlur = dotR*3
         ctx.beginPath(); ctx.arc(cx+gx, cy+gy, dotR, 0, 6.283); ctx.fillStyle = dotC; ctx.fill()
         ctx.shadowBlur = 0
 
-        // Text
-        var fs = Math.max(Math.min(r*0.18, 10), 7)
+        // G value
         ctx.font = '700 '+fs.toFixed(0)+'px Consolas,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle'
-        ctx.fillStyle = '#ffffff'; ctx.fillText(gMag.toFixed(2)+'G', cx, cy+r+fs*1.3)
-
+        ctx.fillStyle = '#ffffff'; ctx.fillText(gMag.toFixed(2)+'G', cx, cy+r+fs*1.1)
       }
 
       /* ==================== GRID HELPER ==================== */
