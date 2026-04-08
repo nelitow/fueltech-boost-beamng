@@ -146,6 +146,13 @@
   box-shadow: 0 0 12px rgba(255,102,0,0.12);
 }
 
+.ft-btn-ob-on {
+  color: #ff2244 !important;
+  border-color: #ff2244 !important;
+  background: rgba(30,8,10,0.9) !important;
+  box-shadow: 0 0 12px rgba(255,34,68,0.15);
+}
+
 /* Drivetrain selectors */
 .ft-dt {
   display: flex;

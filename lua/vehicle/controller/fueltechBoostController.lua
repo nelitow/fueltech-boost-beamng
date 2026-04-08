@@ -19,6 +19,9 @@ local boostTable = {}
 local boostByGear = false
 local gearMultipliers = {0.5, 0.65, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0}
 
+-- Force overboost: bypass boostMax clamp
+local forceOverboost = false
+
 -- Saved profiles
 local savedProfiles = {}
 local profileDir = nil
@@ -117,9 +120,8 @@ local function updateGFX(dt)
   -- Read the turbo's hardware max boost (from BeamNG's tuning slider)
   local turboMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
 
-  -- Clamp target to turbo hardware max unless user explicitly set higher
-  -- (turboMax of 0 means no limit / not available)
-  if turboMax > 0 and targetPSI > turboMax then
+  -- Clamp target to turbo hardware max (unless force overboost is on)
+  if not forceOverboost and turboMax > 0 and targetPSI > turboMax then
     targetPSI = turboMax
   end
 
@@ -142,6 +144,7 @@ local function updateGFX(dt)
   -- Publish turbo max and safety state for UI
   electrics.values.fueltech_boostMax = turboMax
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
+  electrics.values.fueltech_forceOB = forceOverboost and 1 or 0
 
   -- Closed-loop PI controller: adjust offset based on error between target and actual
   if currentRPM > 1500 and targetPSI > 0 then
@@ -264,6 +267,11 @@ local function toggleBoostByGear()
     enabled = boostByGear,
     multipliers = gearMultipliers
   })
+end
+
+local function toggleForceOverboost()
+  forceOverboost = not forceOverboost
+  log("I", "fueltechBoost", "Force overboost: " .. tostring(forceOverboost))
 end
 
 local function setGearMultiplier(gearIdx, mul)
@@ -537,6 +545,7 @@ M.sendPowerCurves = sendPowerCurves
 M.setPreset = setPreset
 M.autoMax = autoMax
 M.toggleBoostByGear = toggleBoostByGear
+M.toggleForceOverboost = toggleForceOverboost
 M.setGearMultiplier = setGearMultiplier
 M.getBoostByGearInfo = getBoostByGearInfo
 M.saveProfile = saveProfile

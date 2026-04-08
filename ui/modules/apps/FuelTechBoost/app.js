@@ -46,6 +46,7 @@ angular.module('beamng.apps')
       scope.speedStr = '0'; scope.gearStr = 'N'
       scope.preset = 'CUSTOM'
       scope.dtFeatures = []
+      scope.forceOB = false
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
       scope.cel = false; scope.lowFuel = false
@@ -125,6 +126,9 @@ angular.module('beamng.apps')
       scope.resetPeakRpm = function () { peakRPM = 0; scope.peakRpmStr = '0' }
       scope.toggleDt = function (f) {
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleFeature("' + f.name + '")') } catch(e) {}
+      }
+      scope.toggleForceOB = function () {
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleForceOverboost()') } catch(e) {}
       }
 
       // Drag timer
@@ -890,6 +894,7 @@ angular.module('beamng.apps')
           scope.altStr=Math.round(altitude).toString()
           scope.odoStr=(odometer/1000).toFixed(1)
           scope.cel=cel; scope.lowFuel=lowFuel
+          scope.forceOB=!!(lastElectrics&&lastElectrics.fueltech_forceOB)
 
           if (!lay) {
             var root = element[0]

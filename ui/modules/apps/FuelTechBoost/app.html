@@ -15,7 +15,7 @@
     <span class="ft-toggle" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-ver">v6.2</span>
+    <span class="ft-ver">v6.3</span>
   </div>
 
   <!-- Telemetry strip -->
@@ -92,6 +92,7 @@
     <div class="ft-btn" ng-class="{'ft-btn-on':preset==='MAX'}" ng-click="setPreset('MAX')" style="flex:1">MAX</div>
     <div class="ft-btn" ng-class="{'ft-btn-on':preset==='AUTOMAX'}" ng-click="setPreset('AUTOMAX')" style="flex:1">AUTO MAX</div>
     <div class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" ng-click="setPreset('CUSTOM')" style="flex:1">CUSTOM</div>
+    <div class="ft-btn ft-btn-ob" ng-class="{'ft-btn-ob-on':forceOB}" ng-click="toggleForceOB()" style="flex:1">OVERBOOST</div>
   </div>
 
   <!-- Turbo timer overlay -->
