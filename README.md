@@ -2,84 +2,147 @@
 
 A full-screen dashboard mod inspired by FuelTech standalone ECUs. Features real-time boost control with an interactive boost map, power/torque curves, telemetry gauges, and drivetrain selectors.
 
+Works with **turbocharged** and **supercharged** vehicles. On naturally aspirated cars, it works as a universal telemetry HUD (boost features auto-hide).
+
 ![BeamNG.drive](https://img.shields.io/badge/BeamNG.drive-0.34+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## Installation (Step by Step)
+
+### 1. Download the mod
+
+Go to the [Releases page](https://github.com/nelitow/fueltech-boost-beamng/releases) and download **`fueltech_boost_controller.zip`** from the latest release.
+
+### 2. Find your BeamNG mods folder
+
+Open File Explorer and paste this into the address bar:
+
+```
+%LocalAppData%\BeamNG\BeamNG.drive
+```
+
+You'll see a folder with a version number (like `0.34` or `0.35`). Open it, then open the **`mods`** folder inside. If there's no `unpacked` folder, create one.
+
+Your path should look like:
+```
+C:\Users\YourName\AppData\Local\BeamNG\BeamNG.drive\0.34\mods\unpacked\
+```
+
+### 3. Extract the zip
+
+Extract `fueltech_boost_controller.zip` into the `unpacked` folder. You should end up with:
+```
+mods/unpacked/fueltech_boost_controller/
+    lua/
+    ui/
+    vehicles/
+    ...
+```
+
+Make sure the folder is called `fueltech_boost_controller` (not nested inside another folder).
+
+### 4. Launch BeamNG and add the dashboard
+
+1. Start BeamNG.drive and load any vehicle
+2. Press **Escape** to open the menu
+3. Click **UI Apps** (bottom left)
+4. Search for **"FuelTech Dashboard"**
+5. Click it to add it to your screen
+6. Drag the edges to resize it — it will auto-fill to whatever size you set
+
+### 5. Done!
+
+The dashboard will automatically detect your vehicle's features:
+- **Turbo car** — boost map, PSI gauge, turbo RPM, power curves, presets all appear
+- **Supercharged car** — boost PSI gauge appears (no turbo RPM), boost control via bypass valve
+- **NA car** — only RPM, speed, G-force, temps, and telemetry show (no boost features)
+
+---
 
 ## Features
 
 ### Boost Control
-- **6-point boost-by-RPM map** with drag-and-drop editing (mouse + touch)
-- **Closed-loop PI controller** — reads actual boost and adjusts wastegate offset to hit the target, works regardless of base turbo setup
-- **Presets** — MIN, MAX, AUTO MAX (calculates safe boost from torque limits), CUSTOM
-- **Boost-by-gear** — per-gear multipliers to reduce boost in lower gears
-- **Save/Load profiles** — persist custom maps to disk
+- **6-point boost-by-RPM map** — drag points to adjust (mouse + touchscreen)
+- **Closed-loop PI controller** — targets actual boost, not just wastegate offset
+- **Presets** — OFF (0 boost), STOCK (factory boost), MAX, AUTO MAX (safe torque limit), CUSTOM
+- **OVERBOOST** — bypasses the turbo's hardware max limit (red button)
+- **Boost-by-gear** — reduce boost in lower gears for traction
+- **Save/Load profiles** — persist custom maps per vehicle
+- **Safety cut** — drops boost to 0 if coolant >115C or oil >135C
 
-### Dashboard Gauges
-- **RPM** — large circular gauge with redline zone
-- **Boost PSI** — side by side with turbo RPM
-- **Oil temp / Coolant temp** — always visible, warns on overheat
-- **Throttle position**
-- **Turbo RPM**
-- **EGT** (exhaust gas temperature, shown only when available)
+### Dashboard
+- **RPM gauge** — large circular with redline zone
+- **Boost PSI gauge** — auto-scales to turbo's max, side-by-side with turbo RPM (turbo) or full width (supercharger)
+- **Oil temp / Coolant temp** — with overheat warnings
+- **Throttle / Turbo RPM / EGT** — shown only when available
+- **G-Force meter** — lateral + longitudinal dot display
+- **Drag timer** — 0-100 and 0-200 km/h, auto-starts from standstill
+- **Power/torque curves** — projected vs stock with live Nm/HP readout
+- **Brake temperatures** — per-wheel with blue-green-yellow-red color coding
+- **Damage log** — shows engine/brake/tire/drivetrain damage in real time
 
-### Telemetry
-- **G-Force meter** — lateral + longitudinal with color-coded dot
-- **Drag timer** — 0-100 and 0-200 km/h with auto-start from standstill
-- **Power/torque curves** — projected vs stock, with torque limit overlay
-- **Peak boost and peak RPM trackers** (click to reset)
+### Telemetry Strip
+Engine load, fuel level, exhaust flow, clutch position, altitude, odometer, check engine light, low fuel warning
 
 ### Vehicle Features
-- **Drivetrain selectors** — AWD, diff lock, range box (auto-detected per vehicle, hidden when not available)
-- **Shift light** — border flash + gear highlight at 90% redline
-- **Warning alerts** — oil temp >130C, coolant >110C, sustained overboost, EGT >850C
-- **Turbo timer** — cooldown overlay after engine off
+- **Drivetrain selectors** — diff lock, AWD, range box (auto-detected)
+- **Drive modes** — ESC, TCS, ABS toggles (when available)
+- **Shift light** — flashes at 90% redline
+- **Turbo timer** — cooldown after engine off
 
 ### Smart Detection
-- Turbo gauges, boost map, power curves, and presets **auto-hide** on NA/supercharged vehicles
-- EGT gauge only appears when the vehicle provides exhaust temperature data
-- Dashboard works as a universal telemetry HUD on any vehicle
+- Checks `isExisting` on turbo/supercharger objects (BeamNG creates stubs for both)
+- Turbo: controlled via `setWastegateOffset`
+- Supercharger: controlled via `setBypassPressure`
+- NA cars: boost features hidden, telemetry HUD only
+- Auto-fills viewport on window resize
 
-## Installation
+---
 
-1. Download or clone this repo
-2. Copy the `fueltech_boost_controller` folder to:
-   ```
-   %LocalAppData%\BeamNG\BeamNG.drive\<version>\mods\unpacked\
-   ```
-3. Launch BeamNG.drive
-4. Open the app selector (UI Apps) and add **FuelTech Dashboard**
+## Usage Tips
 
-## Usage
+| Action | How |
+|--------|-----|
+| Adjust boost curve | Drag the orange dots on the boost map |
+| Quick presets | Click OFF / STOCK / MAX / AUTO MAX / CUSTOM |
+| Push beyond stock | Click OVERBOOST (red when active) |
+| Reset peak values | Click "BOOST PK" or "RPM PK" in the header |
+| Toggle graphs | Click "HIDE/SHOW GRAPHS" in the header |
+| Lock differential | Click the R.DIFF / F.DIFF button near the gear display |
+| Switch range | Click RANGE: HI/LO |
+| Reset drag timer | Click RESET under the timer |
 
-- **Drag boost map points** to adjust the RPM/boost curve
-- **Click presets** (MIN / MAX / AUTO MAX / CUSTOM) for quick maps
-- **Click peak values** in the header to reset them
-- **Click HIDE/SHOW GRAPHS** to toggle the bottom panel
-- **Click drivetrain buttons** (AWD, F.DIFF, R.DIFF, RANGE) to cycle modes
-- **Drag timer** auto-starts when you accelerate from standstill — click RESET to clear
+---
 
-## How the Boost Controller Works
+## Troubleshooting
 
-The mod uses a **closed-loop PI controller**:
+**Boost map not showing?**
+- Your vehicle needs a turbocharger or supercharger. NA cars only show the telemetry HUD.
+- The mod installs into the N2O system slot — make sure no other mod is using that slot.
 
-1. Reads the target boost PSI from the 6-point RPM/boost map (with linear interpolation)
-2. Reads the actual boost from the turbocharger
-3. Calculates the error (target - actual)
-4. Adjusts the wastegate offset proportionally + cumulatively to converge on the target
-5. Anti-windup clamp prevents integral overshoot
+**Boost values all 0?**
+- This happens when BeamNG's saved config resets the tuning variables. Click the STOCK preset to restore factory boost levels.
 
-This approach works with any turbo setup regardless of the base wastegate pressure — the controller self-calibrates by continuously measuring the error.
+**Dashboard too small?**
+- Drag the widget edges in the UI Apps editor to make it larger. The dashboard auto-fills to whatever size you give it.
+
+**No presets/buttons visible?**
+- Presets only appear for turbo/supercharged vehicles. On NA cars they're hidden.
+
+---
 
 ## File Structure
 
 ```
 fueltech_boost_controller/
   lua/vehicle/controller/
-    fueltechBoostController.lua   -- Boost control + profiles + boost-by-gear
-    fueltechDrivetrain.lua        -- Drivetrain feature detection + toggle
+    fueltechBoostController.lua   -- Boost control, PI controller, profiles
+    fueltechDrivetrain.lua        -- Diff lock, range box, ESC/TCS detection
   ui/modules/apps/FuelTechBoost/
     app.html                      -- Dashboard layout
-    app.css                       -- Dark theme with orange accents
+    app.css                       -- Dark theme with FuelTech orange accents
     app.js                        -- Gauges, graphs, telemetry, feature detection
     app.json                      -- App metadata
   vehicles/common/fueltech_boost/
@@ -89,8 +152,8 @@ fueltech_boost_controller/
 ## Compatibility
 
 - BeamNG.drive 0.34+
-- Works on any vehicle — turbo features auto-hide when not applicable
-- Touch support for Steam Deck / touchscreen users
+- Turbocharged, supercharged, and NA vehicles
+- Touch support (Steam Deck / touchscreen)
 
 ## License
 
@@ -98,5 +161,5 @@ MIT License — free to use, modify, and distribute.
 
 ## Credits
 
-- **Author:** Nelito
+- **Author:** [Nelito](https://github.com/nelitow)
 - Dashboard design inspired by [FuelTech](https://www.fueltech.com/) standalone ECUs
