@@ -81,7 +81,7 @@ angular.module('beamng.apps')
       var cel = false, lowFuel = false
 
       // Feature detection: auto-hide gauges that never receive data
-      var hasTurbo = false, hasEgt = false
+      var hasTurbo = false, hasEgt = false, hasTurboRpm = false
       var detectFrames = 0, detectDone = false
 
       scope.hasTurbo = false; scope.hasEgt = false
@@ -375,7 +375,7 @@ angular.module('beamng.apps')
         // RPM gauge: rows 2-4, cols 10-12
         gridBox(q('.ft-c-rpm'), 10, 2, 3, 3)
 
-        // PSI + TRB: rows 5-7, cols 10-12 side by side (like OIL/H2O)
+        // PSI + TRB: rows 5-7, cols 10-12
         var rightX = GAP + 9 * cw
         var bstY = GAP + 4 * ch
         var bstTotalW = 3 * cw - GAP
@@ -384,9 +384,16 @@ angular.module('beamng.apps')
 
         if (hasTurbo) {
           var bstEl = q('.ft-c-bst')
-          if (bstEl) bstEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
           var trbEl = q('.ft-c-trb')
-          if (trbEl) trbEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+bstHalfW+GAP)+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
+          if (hasTurboRpm) {
+            // Side by side: PSI left, TRB right
+            if (bstEl) bstEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
+            if (trbEl) trbEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+bstHalfW+GAP)+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
+          } else {
+            // No turbo RPM (supercharger): PSI full width, hide TRB
+            if (bstEl) bstEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+bstY+'px;width:'+bstTotalW+'px;height:'+bstH+'px;overflow:hidden'
+            if (trbEl) trbEl.style.display = 'none'
+          }
         }
 
         // OIL & H2O: rows 8-9, cols 10-12
@@ -455,7 +462,7 @@ angular.module('beamng.apps')
 
         lay = {
           gaugeW: gaugeW, gaugeH: gaugeH,
-          bstW: bstHalfW, bstH: bstH,
+          bstW: hasTurboRpm ? bstHalfW : bstTotalW, bstH: bstH,
           oilW: halfW, oilH: ohH,
           thrW: thrW, thrH: thrH,
           graphW: mapW, graphH: mapH,
@@ -890,7 +897,7 @@ angular.module('beamng.apps')
 
       function drawAll () {
         drawRpmGauge(); drawOilH2oGauges(); drawGForce()
-        if (hasTurbo) { drawBoostGauge(); drawTurboRpmGauge() }
+        if (hasTurbo) { drawBoostGauge(); if (hasTurboRpm) drawTurboRpmGauge() }
         if (scope.showGraphs) {
           drawThrTrbGauges()
           if (hasTurbo) { drawBoostMap(); drawPower() }
@@ -983,7 +990,7 @@ angular.module('beamng.apps')
           if (s.engineInfo) { rpm = s.engineInfo[4]||0; if (s.engineInfo[1]&&s.engineInfo[1]>1000) maxRPM = s.engineInfo[1] }
           if (s.electrics) {
             lastElectrics = s.electrics
-            boost=s.electrics.turboBoost||0; tgt=s.electrics.fueltech_targetBoost||0; boostMax=s.electrics.fueltech_boostMax||s.electrics.turboBoostMax||s.electrics.boostMax||0
+            boost=s.electrics.turboBoost||s.electrics.boost||0; tgt=s.electrics.fueltech_targetBoost||0; boostMax=s.electrics.fueltech_boostMax||s.electrics.turboBoostMax||s.electrics.boostMax||0
             speed=(s.electrics.wheelspeed||s.electrics.airspeed||0)*3.6
             oilT=s.electrics.oiltemp||0; h2oT=s.electrics.watertemp||0
             throttle=s.electrics.throttle||0; turboRpm=s.electrics.turboRPM||0
@@ -1027,6 +1034,7 @@ angular.module('beamng.apps')
           if (!detectDone) {
             detectFrames++
             if (hasBoostData) { hasTurbo = true; scope.hasTurbo = true }
+            if (turboRpm > 0) hasTurboRpm = true
             if (egt > 0) { hasEgt = true; scope.hasEgt = true }
             if (detectFrames >= 30) {
               detectDone = true
@@ -1035,6 +1043,7 @@ angular.module('beamng.apps')
             }
           } else {
             if (!hasTurbo && hasBoostData) { hasTurbo = true; scope.hasTurbo = true; lay = null; applyGraphVisibility() }
+            if (!hasTurboRpm && turboRpm > 0) { hasTurboRpm = true; lay = null; applyGraphVisibility() }
             if (!hasEgt && egt > 0) { hasEgt = true; scope.hasEgt = true; lay = null; applyGraphVisibility() }
           }
 
