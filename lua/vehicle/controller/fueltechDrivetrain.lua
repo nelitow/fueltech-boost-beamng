@@ -12,10 +12,11 @@ local scanTimer = 0
 local function getLabel(name, devType)
   local n = string.lower(name or "")
   if devType == "range" then return "RANGE" end
-  if string.find(n, "center") or string.find(n, "centre") or string.find(n, "transfer") then return "AWD" end
+  if string.find(n, "center") or string.find(n, "centre") or string.find(n, "transfer") then return "CTR" end
   if string.find(n, "front") then return "F.DIFF" end
   if string.find(n, "rear") then return "R.DIFF" end
-  return string.upper(string.sub(name or "DIFF", 1, 5))
+  if devType == "diff" then return "DIFF" end
+  return string.upper(string.sub(name or "DEV", 1, 5))
 end
 
 local function getModeLabel(modeName)
@@ -46,19 +47,52 @@ end
 local function scanDrivetrain()
   features = {}
 
-  local function tryAdd(devType, scanType)
+  local scanTypes = {
+    {"diff", "differential"},
+    {"range", "rangeBox"},
+  }
+
+  for _, st in ipairs(scanTypes) do
+    local devType, scanType = st[1], st[2]
     local ok, devices = pcall(powertrain.getDevicesByType, scanType)
-    if not ok or not devices then return end
-    for _, dev in pairs(devices) do
-      if dev and dev.name and dev.availableModes and type(dev.availableModes) == "table" and #dev.availableModes > 1 then
+    if ok and devices then
+      for _, dev in pairs(devices) do
+        if dev and dev.name and dev.availableModes and type(dev.availableModes) == "table" and #dev.availableModes > 1 then
+          local modeLabels = {}
+          for i, m in ipairs(dev.availableModes) do
+            modeLabels[i] = getModeLabel(m)
+          end
+          table.insert(features, {
+            type = devType,
+            name = dev.name,
+            label = getLabel(dev.name, devType),
+            modes = dev.availableModes,
+            modeLabels = modeLabels,
+            electricsName = "fueltech_dt_" .. dev.name
+          })
+        end
+      end
+    end
+  end
+
+  -- Also check common device names directly
+  local commonNames = {"rearDiff", "frontDiff", "centerDiff", "transferCase", "diff_R", "diff_F", "diff_C"}
+  for _, name in ipairs(commonNames) do
+    local ok2, dev = pcall(powertrain.getDevice, name)
+    if ok2 and dev and dev.name then
+      local found = false
+      for _, f in ipairs(features) do
+        if f.name == dev.name then found = true; break end
+      end
+      if not found and dev.availableModes and type(dev.availableModes) == "table" and #dev.availableModes > 1 then
         local modeLabels = {}
         for i, m in ipairs(dev.availableModes) do
           modeLabels[i] = getModeLabel(m)
         end
         table.insert(features, {
-          type = devType,
+          type = "diff",
           name = dev.name,
-          label = getLabel(dev.name, devType),
+          label = getLabel(dev.name, "diff"),
           modes = dev.availableModes,
           modeLabels = modeLabels,
           electricsName = "fueltech_dt_" .. dev.name
@@ -67,8 +101,7 @@ local function scanDrivetrain()
     end
   end
 
-  tryAdd("diff", "differential")
-  tryAdd("range", "rangeBox")
+  log("I", "fueltechDT", "Drivetrain scan: " .. #features .. " switchable features found")
 
   local uiData = {}
   for i, f in ipairs(features) do
@@ -104,7 +137,7 @@ end
 local function toggleFeature(featureName)
   local ok, err = pcall(powertrain.toggleDeviceMode, featureName)
   if not ok then
-    log("W", "fueltechDrivetrain", "Failed to toggle " .. tostring(featureName) .. ": " .. tostring(err))
+    log("W", "fueltechDT", "Failed to toggle " .. tostring(featureName) .. ": " .. tostring(err))
   end
 end
 

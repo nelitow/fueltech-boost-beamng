@@ -293,6 +293,43 @@
   text-shadow: 0 0 14px rgba(255,102,0,0.3);
 }
 
+/* Telemetry strip */
+.ft-telem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: rgba(10,12,20,0.6);
+  border: 1px solid rgba(40,46,66,0.3);
+  border-radius: 4px;
+}
+
+.ft-telem-item {
+  font-size: 8px;
+  color: #667088;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.ft-telem-item b {
+  color: #9aa2b8;
+  font-weight: 600;
+}
+
+.ft-telem-cel {
+  font-size: 8px;
+  font-weight: 700;
+  color: #ff6600;
+  letter-spacing: 1px;
+}
+
+.ft-telem-fuel {
+  font-size: 8px;
+  font-weight: 700;
+  color: #ff2244;
+  letter-spacing: 1px;
+}
+
 /* Version tag */
 .ft-ver {
   font-size: 8px;

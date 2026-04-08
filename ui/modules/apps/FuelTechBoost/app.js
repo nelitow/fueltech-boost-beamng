@@ -26,11 +26,14 @@ angular.module('beamng.apps')
       /* ==================== STATE ==================== */
       var rpm = 0, boost = 0, tgt = 0, speed = 0
       var oilT = 0, h2oT = 0, throttle = 0, turboRpm = 0
-      var maxRPM = 8000, maxPSI = 40, peakBoost = 0
+      var maxRPM = 8000, maxPSI = 40, peakBoost = 0, boostMax = 0
       var peakRPM = 0
       var gForceX = 0, gForceY = 0
       var egt = 0
       var gear = 0
+      var engineLoad = 0, fuelVol = 0, fuelCap = 0, exhFlow = 0
+      var clutchPos = 0, altitude = 0, odometer = 0
+      var cel = false, lowFuel = false
 
       // Feature detection: auto-hide gauges that never receive data
       var hasTurbo = false, hasEgt = false
@@ -43,6 +46,9 @@ angular.module('beamng.apps')
       scope.speedStr = '0'; scope.gearStr = 'N'
       scope.preset = 'CUSTOM'
       scope.dtFeatures = []
+      scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
+      scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
+      scope.cel = false; scope.lowFuel = false
 
       // Shift light
       scope.shiftLight = false
@@ -220,7 +226,15 @@ angular.module('beamng.apps')
 
         // Header: row 1, full width
         gridBox(q('.ft-hdr'), 1, 1, 12, 1,
-          'display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.65);border:1px solid rgba(24,28,40,0.4);border-radius:6px;padding:0 14px')
+          'display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.82);border:1px solid rgba(40,46,66,0.5);border-radius:6px;padding:0 14px')
+
+        // Telemetry strip: thin bar just below header
+        var telemEl = q('.ft-telem')
+        if (telemEl) {
+          var hdrH = ch - GAP
+          var tH = Math.round(ch * 0.45)
+          telemEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;top:'+(GAP+hdrH+2)+'px;width:'+(W-GAP*2)+'px;height:'+tH+'px;overflow:hidden;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+        }
 
         // RPM gauge: rows 2-4, cols 10-12
         gridBox(q('.ft-c-rpm'), 10, 2, 3, 3)
@@ -429,7 +443,8 @@ angular.module('beamng.apps')
       function drawBoostGauge () {
         initCanvases(); if(!ctxBst||!lay) return
         var sz=sizeCvs(cvsBst,lay.bstW,lay.bstH); if(!sz) return
-        drawMiniGauge(ctxBst,sz.w,sz.h,Math.max(boost,0),maxPSI,boost.toFixed(1),'PSI','BOOST','#00bbff','#ff7700')
+        var bstMax = boostMax > 0 ? Math.ceil(boostMax * 1.2) : maxPSI
+        drawMiniGauge(ctxBst,sz.w,sz.h,Math.max(boost,0),bstMax,boost.toFixed(1),'PSI','BOOST','#00bbff','#ff7700')
       }
       function drawTurboRpmGauge () {
         initCanvases(); if(!ctxTrb||!lay) return
@@ -794,13 +809,21 @@ angular.module('beamng.apps')
         scope.$evalAsync(function () {
           if (s.engineInfo) { rpm = s.engineInfo[4]||0; if (s.engineInfo[1]&&s.engineInfo[1]>1000) maxRPM = s.engineInfo[1] }
           if (s.electrics) {
-            boost=s.electrics.turboBoost||0; tgt=s.electrics.fueltech_targetBoost||0
+            boost=s.electrics.turboBoost||0; tgt=s.electrics.fueltech_targetBoost||0; boostMax=s.electrics.fueltech_boostMax||s.electrics.turboBoostMax||s.electrics.boostMax||0
             speed=(s.electrics.wheelspeed||s.electrics.airspeed||0)*3.6
             oilT=s.electrics.oiltemp||0; h2oT=s.electrics.watertemp||0
             throttle=s.electrics.throttle||0; turboRpm=s.electrics.turboRPM||0
             gForceX=(s.electrics.accXSmooth||s.electrics.accX||0)/9.81
             gForceY=(s.electrics.accYSmooth||s.electrics.accY||0)/9.81
             egt=s.electrics.exhaustTemperature||s.electrics.egt||0
+            engineLoad=s.electrics.engineLoad||0
+            fuelVol=s.electrics.fuelVolume||0; fuelCap=s.electrics.fuelCapacity||1
+            exhFlow=s.electrics.exhaustFlow||0
+            clutchPos=s.electrics.clutch||0
+            altitude=s.electrics.altitude||0
+            odometer=s.electrics.odometer||0
+            cel=!!(s.electrics.checkengine)
+            lowFuel=!!(s.electrics.lowfuel)
             scope.active=!!(s.electrics.fueltech_active)
             var gv=s.electrics.gear_M; if(gv===undefined)gv=s.electrics.gearIndex; if(gv===undefined)gv=0
             gear = gv
@@ -853,9 +876,16 @@ angular.module('beamng.apps')
 
           // Update display strings
           scope.rpmStr=Math.round(rpm).toString(); scope.boostStr=boost.toFixed(1)
-          scope.tgtStr=tgt.toFixed(1); scope.peakStr=peakBoost.toFixed(1)
+          scope.tgtStr=tgt.toFixed(1); scope.peakStr=peakBoost.toFixed(1); scope.boostMaxStr=boostMax>0?boostMax.toFixed(1):''
           scope.peakRpmStr=Math.round(peakRPM).toString()
           scope.speedStr=Math.round(speed).toString()
+          scope.loadStr=Math.round(engineLoad*100).toString()
+          scope.fuelStr=Math.round(fuelVol).toString()
+          scope.exhFlowStr=exhFlow.toFixed(1)
+          scope.clutchStr=Math.round((1-clutchPos)*100).toString()
+          scope.altStr=Math.round(altitude).toString()
+          scope.odoStr=odometer.toFixed(1)
+          scope.cel=cel; scope.lowFuel=lowFuel
 
           if (!lay) {
             var root = element[0]

@@ -109,7 +109,19 @@ local function updateGFX(dt)
   local gearMul = getGearMultiplier()
   targetPSI = targetPSI * gearMul
 
+  -- Read the turbo's hardware max boost (from BeamNG's tuning slider)
+  local turboMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
+
+  -- Clamp target to turbo hardware max unless user explicitly set higher
+  -- (turboMax of 0 means no limit / not available)
+  if turboMax > 0 and targetPSI > turboMax then
+    targetPSI = turboMax
+  end
+
   local actualBoost = electrics.values.turboBoost or 0
+
+  -- Publish turbo max for UI
+  electrics.values.fueltech_boostMax = turboMax
 
   -- Closed-loop PI controller: adjust offset based on error between target and actual
   if currentRPM > 1500 and targetPSI > 0 then
