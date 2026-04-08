@@ -1,11 +1,13 @@
 -- FuelTech Drivetrain Controller
--- Scans powertrain for switchable differentials, range boxes, and transfer cases
+-- Scans powertrain for switchable differentials, range boxes, transfer cases
+-- Also detects ESC, TCS, and drive mode controllers
 -- Publishes current modes to UI via electrics values
 
 local M = {}
 M.type = "auxiliary"
 
 local features = {}
+local driveModes = {}
 local scanned = false
 local scanTimer = 0
 
@@ -46,7 +48,9 @@ end
 
 local function scanDrivetrain()
   features = {}
+  driveModes = {}
 
+  -- Scan powertrain devices (diffs, range boxes)
   local scanTypes = {
     {"diff", "differential"},
     {"range", "rangeBox"},
@@ -75,7 +79,7 @@ local function scanDrivetrain()
     end
   end
 
-  -- Also check common device names directly
+  -- Check common device names directly
   local commonNames = {"rearDiff", "frontDiff", "centerDiff", "transferCase", "diff_R", "diff_F", "diff_C"}
   for _, name in ipairs(commonNames) do
     local ok2, dev = pcall(powertrain.getDevice, name)
@@ -101,8 +105,28 @@ local function scanDrivetrain()
     end
   end
 
-  log("I", "fueltechDT", "Drivetrain scan: " .. #features .. " switchable features found")
+  -- Scan for drive mode controllers (ESC, TCS, etc.)
+  local ctrlChecks = {
+    {name = "esc", label = "ESC", electricsKey = "esc"},
+    {name = "tcs", label = "TCS", electricsKey = "tcs"},
+    {name = "absController", label = "ABS", electricsKey = "abs"},
+  }
 
+  for _, cc in ipairs(ctrlChecks) do
+    local ok3, ctrl = pcall(controller.getController, cc.name)
+    if ok3 and ctrl then
+      table.insert(driveModes, {
+        name = cc.name,
+        label = cc.label,
+        electricsKey = cc.electricsKey,
+        active = true
+      })
+    end
+  end
+
+  log("I", "fueltechDT", "Drivetrain scan: " .. #features .. " switchable features, " .. #driveModes .. " drive modes")
+
+  -- Send all to UI
   local uiData = {}
   for i, f in ipairs(features) do
     uiData[i] = {
@@ -114,6 +138,17 @@ local function scanDrivetrain()
     }
   end
   guihooks.trigger("fueltechDrivetrainInfo", uiData)
+
+  local uiModes = {}
+  for i, dm in ipairs(driveModes) do
+    uiModes[i] = {
+      name = dm.name,
+      label = dm.label,
+      electricsKey = dm.electricsKey
+    }
+  end
+  guihooks.trigger("fueltechDriveModesInfo", uiModes)
+
   scanned = true
 end
 
@@ -126,6 +161,7 @@ local function updateGFX(dt)
     return
   end
 
+  -- Update drivetrain feature modes
   for _, f in ipairs(features) do
     local dev = powertrain.getDevice(f.name)
     if dev and dev.mode ~= nil then
@@ -141,6 +177,29 @@ local function toggleFeature(featureName)
   end
 end
 
+local function toggleDriveMode(modeName)
+  local ok, ctrl = pcall(controller.getController, modeName)
+  if ok and ctrl then
+    if ctrl.toggleActive then
+      ctrl.toggleActive()
+    elseif ctrl.toggle then
+      ctrl.toggle()
+    elseif ctrl.setActive then
+      -- Read current state and invert
+      local key = nil
+      for _, dm in ipairs(driveModes) do
+        if dm.name == modeName then key = dm.electricsKey; break end
+      end
+      local current = key and (electrics.values[key] or 0) or 0
+      ctrl.setActive(current == 0)
+    else
+      log("W", "fueltechDT", "No toggle method found for " .. modeName)
+    end
+  else
+    log("W", "fueltechDT", "Controller not found: " .. tostring(modeName))
+  end
+end
+
 local function getInfo()
   scanDrivetrain()
 end
@@ -149,6 +208,7 @@ local function init(jbeamData)
   scanned = false
   scanTimer = 0
   features = {}
+  driveModes = {}
 end
 
 local function reset()
@@ -160,6 +220,7 @@ M.init = init
 M.reset = reset
 M.updateGFX = updateGFX
 M.toggleFeature = toggleFeature
+M.toggleDriveMode = toggleDriveMode
 M.getInfo = getInfo
 
 return M

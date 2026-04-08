@@ -8,8 +8,35 @@ angular.module('beamng.apps')
     link: function (scope, element) {
       var streamsList = ['electrics', 'engineInfo']
       StreamsManager.add(streamsList)
+      // Force app to fill viewport
+      var root = element[0]
+      function forceFullscreen () {
+        var parent = root.parentElement
+        if (parent) {
+          var pw = parent.offsetWidth || window.innerWidth
+          var ph = parent.offsetHeight || window.innerHeight
+          if (pw > 100 && ph > 100) {
+            root.style.width = pw + 'px'
+            root.style.height = ph + 'px'
+            if (!lay || appW !== pw || appH !== ph) {
+              lay = null
+              doLayout(pw, ph)
+              drawAll()
+            }
+          }
+        }
+      }
+      var resizeObs = null
+      try {
+        resizeObs = new ResizeObserver(forceFullscreen)
+        resizeObs.observe(root.parentElement || root)
+      } catch(e) {}
+      window.addEventListener('resize', forceFullscreen)
+
       scope.$on('$destroy', function () {
         StreamsManager.remove(streamsList)
+        if (resizeObs) resizeObs.disconnect()
+        window.removeEventListener('resize', forceFullscreen)
         if (initTimer) clearTimeout(initTimer)
         if (cvsMap) {
           cvsMap.removeEventListener('mousedown', onDown)
@@ -46,6 +73,7 @@ angular.module('beamng.apps')
       scope.speedStr = '0'; scope.gearStr = 'N'
       scope.preset = 'CUSTOM'
       scope.dtFeatures = []
+      scope.dmodes = []
       scope.forceOB = false
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
@@ -97,6 +125,21 @@ angular.module('beamng.apps')
         })
       })
 
+      scope.$on('fueltechDriveModesInfo', function (_, data) {
+        if (!data || !data.length) return
+        scope.$evalAsync(function () {
+          scope.dmodes = []
+          for (var i = 0; i < data.length; i++) {
+            scope.dmodes.push({
+              name: data[i].name,
+              label: data[i].label,
+              electricsKey: data[i].electricsKey,
+              active: true
+            })
+          }
+        })
+      })
+
       // Boost-by-gear data
       scope.$on('fueltechBoostByGearInfo', function (_, d) {
         if (d) {
@@ -116,16 +159,16 @@ angular.module('beamng.apps')
 
       scope.setPreset = function (n) {
         scope.preset = n
-        if (n === 'AUTOMAX') {
-          try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").autoMax()') } catch(e){}
-        } else if (n === 'MIN' || n === 'MAX') {
-          try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").setPreset("'+n+'")') } catch(e){}
-        }
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").setPreset("'+n+'")') } catch(e){}
       }
       scope.resetPeak = function () { peakBoost = 0; scope.peakStr = '0.0' }
       scope.resetPeakRpm = function () { peakRPM = 0; scope.peakRpmStr = '0' }
       scope.toggleDt = function (f) {
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleFeature("' + f.name + '")') } catch(e) {}
+      }
+      scope.toggleDm = function (dm) {
+        dm.active = !dm.active
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("' + dm.name + '")') } catch(e) {}
       }
       scope.toggleForceOB = function () {
         scope.forceOB = !scope.forceOB
@@ -149,7 +192,7 @@ angular.module('beamng.apps')
         var vis = scope.showGraphs ? '' : 'none'
         var els = ['.ft-c-thr','.ft-c-drag']
         // Turbo-only toggleable elements (boost map, power, presets)
-        if (hasTurbo) { els.push('.ft-c-map','.ft-c-pwr','.ft-bar') }
+        if (hasTurbo) { els.push('.ft-c-map','.ft-c-pwr') }
         // EGT only if available
         if (hasEgt) { els.push('.ft-c-egt') }
         for (var i = 0; i < els.length; i++) {
@@ -158,7 +201,7 @@ angular.module('beamng.apps')
         }
         // Always hide unavailable elements regardless of graph toggle
         if (!hasTurbo) {
-          var hide = ['.ft-c-map','.ft-c-pwr','.ft-bar','.ft-c-bst','.ft-c-trb']
+          var hide = ['.ft-c-map','.ft-c-pwr','.ft-c-bst','.ft-c-trb']
           for (var j = 0; j < hide.length; j++) { var hel = q(hide[j]); if (hel) hel.style.display = 'none' }
         }
         if (!hasEgt) {
@@ -233,12 +276,21 @@ angular.module('beamng.apps')
         gridBox(q('.ft-hdr'), 1, 1, 12, 1,
           'display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.82);border:1px solid rgba(40,46,66,0.5);border-radius:6px;padding:0 14px')
 
-        // Telemetry strip: thin bar just below header
+        // Warning bar + Telemetry strip: stacked below header in row 2
+        var hdrH = ch - GAP
+        var subY = GAP + hdrH + 2
+        var subW = W - GAP * 2
+        var subH = Math.round(ch * 0.45)
+
+        var warnEl = q('.ft-warn')
+        if (warnEl) {
+          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;height:'+subH+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
+          subY += subH + 2
+        }
+
         var telemEl = q('.ft-telem')
         if (telemEl) {
-          var hdrH = ch - GAP
-          var tH = Math.round(ch * 0.45)
-          telemEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;top:'+(GAP+hdrH+2)+'px;width:'+(W-GAP*2)+'px;height:'+tH+'px;overflow:hidden;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+          telemEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;height:'+subH+'px;overflow:hidden;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
         // RPM gauge: rows 2-4, cols 10-12
@@ -270,11 +322,11 @@ angular.module('beamng.apps')
         var h2oEl = q('.ft-c-h2o')
         if (h2oEl) h2oEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+halfW+GAP)+'px;top:'+ohY+'px;width:'+halfW+'px;height:'+ohH+'px;overflow:hidden'
 
-        // G-Force: rows 2-3, cols 1-2
-        gridBox(q('.ft-c-gforce'), 1, 2, 2, 2)
+        // G-Force: rows 3-4, cols 1-2 (below telem strip)
+        gridBox(q('.ft-c-gforce'), 1, 3, 2, 2)
 
-        // Drag Timer: rows 4-5, cols 1-2
-        gridBox(q('.ft-c-drag'), 1, 4, 2, 2,
+        // Drag Timer: rows 5-6, cols 1-2
+        gridBox(q('.ft-c-drag'), 1, 5, 2, 2,
           'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG.replace('background:', 'background:'))
 
         // THR: rows 7-8, cols 1-2
@@ -292,9 +344,16 @@ angular.module('beamng.apps')
         gridBox(q('.ft-c-spd'), 9, 10, 4, 3,
           'display:flex;flex-direction:column;align-items:center;justify-content:center')
 
-        // Preset buttons: row 12, cols 1-8 (turbo only)
-        if (hasTurbo) gridBox(q('.ft-bar'), 1, 12, 8, 1,
-          'display:flex;gap:4px;border-radius:6px')
+        // Preset buttons: pinned to bottom, thin strip (turbo only)
+        var barEl = q('.ft-bar')
+        if (barEl) {
+          if (hasTurbo) {
+            var barW = 8 * cw - GAP
+            barEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;bottom:'+GAP+'px;width:'+barW+'px;height:14px;display:flex;gap:3px;align-items:center'
+          } else {
+            barEl.style.display = 'none'
+          }
+        }
 
         // Turbo timer: centered overlay
         var ttEl = q('.ft-turbo-timer')
@@ -655,18 +714,21 @@ angular.module('beamng.apps')
           vg2.addColorStop(0,'rgba(0,255,136,0)');vg2.addColorStop(0.5,'rgba(0,255,136,0.04)');vg2.addColorStop(1,'rgba(0,255,136,0)')
           ctx.fillStyle=vg2;ctx.fillRect(rx-0.5,gp.t,1,ggh)
 
-          // Live power/torque dot — interpolate projected curves at current RPM
-          var liveNm=0,liveHP=0
-          for(var li=0;li<td.length-1;li++){
-            if(rpm>=td[li].rpm&&rpm<=td[li+1].rpm){
-              var lt=(rpm-td[li].rpm)/(td[li+1].rpm-td[li].rpm)
-              liveNm=td[li].nm+(td[li+1].nm-td[li].nm)*lt
-              liveHP=pd[li].hp+(pd[li+1].hp-pd[li].hp)*lt
+          // Live power/torque — use BASE (stock) curve scaled by actual boost ratio and load
+          var baseNm=0,baseHP=0
+          for(var li=0;li<bt.length-1;li++){
+            if(rpm>=bt[li].rpm&&rpm<=bt[li+1].rpm){
+              var lt=(rpm-bt[li].rpm)/(bt[li+1].rpm-bt[li].rpm)
+              baseNm=bt[li].nm+(bt[li+1].nm-bt[li].nm)*lt
+              baseHP=bp[li].hp+(bp[li+1].hp-bp[li].hp)*lt
               break
             }
           }
-          // Scale by engine load for actual output
-          liveNm=liveNm*engineLoad; liveHP=liveHP*engineLoad
+          // Scale by actual boost ratio (actual/stock) and engine load
+          var bMaxRef = boostMax > 0 ? boostMax : 1
+          var actualRatio = boost > 0 ? boost / bMaxRef : (boost > -5 ? 1 : 0.5)
+          var liveNm=baseNm*actualRatio*engineLoad
+          var liveHP=baseHP*actualRatio*engineLoad
 
           var dotR2=cl(w*0.008,3,6)
           // Torque dot (red)
@@ -871,6 +933,12 @@ angular.module('beamng.apps')
                 df.modeLabel = df.modeLabels[dv] || '?'
                 df.active = dv > 0
               }
+            }
+            // Drive modes (ESC/TCS/ABS) — read active state from electrics
+            for (var dmi = 0; dmi < scope.dmodes.length; dmi++) {
+              var dm = scope.dmodes[dmi]
+              var ev = s.electrics[dm.electricsKey]
+              if (ev !== undefined) dm.active = !!ev
             }
           }
 

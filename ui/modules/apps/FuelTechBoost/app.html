@@ -4,18 +4,20 @@
   <!-- Top header bar -->
   <div class="ft-hdr">
     <span class="ft-brand">FUELTECH</span>
-    <span class="ft-hdr-boost" ng-if="hasTurbo" ng-class="overboost?'ft-red ft-blink':''">{{boostStr}} PSI</span>
-    <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
-    <span class="ft-hdr-tgt" ng-if="hasTurbo">TGT {{tgtStr}} <span ng-if="boostMaxStr">(MAX {{boostMaxStr}})</span></span>
     <span style="flex:1"></span>
-    <span class="ft-peak" ng-if="hasTurbo" ng-click="resetPeak()">PK {{peakStr}}</span>
+    <span class="ft-peak" ng-if="hasTurbo" ng-click="resetPeak()">BOOST PK {{peakStr}}</span>
     <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
     <span class="ft-peak" ng-click="resetPeakRpm()">RPM PK {{peakRpmStr}}</span>
     <span class="ft-hdr-sep">|</span>
     <span class="ft-toggle" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-ver">v6.7</span>
+    <span class="ft-ver">1.0.0</span>
+  </div>
+
+  <!-- Warning bar (below header, not overlapping) -->
+  <div class="ft-warn" ng-if="warnings.length">
+    <span class="ft-warn-item ft-blink" ng-repeat="w in warnings">{{w}}</span>
   </div>
 
   <!-- Telemetry strip -->
@@ -28,11 +30,6 @@
     <span class="ft-telem-item">ODO <b>{{odoStr}}km</b></span>
     <span class="ft-telem-cel ft-blink" ng-if="cel">CEL</span>
     <span class="ft-telem-fuel ft-blink" ng-if="lowFuel">LOW FUEL</span>
-  </div>
-
-  <!-- Warning bar -->
-  <div class="ft-warn" ng-if="warnings.length">
-    <span class="ft-warn-item ft-blink" ng-repeat="w in warnings">{{w}}</span>
   </div>
 
   <!-- Shift light overlay -->
@@ -51,10 +48,14 @@
       <span class="ft-gear-l">GEAR</span>
       <span class="ft-gear-v" ng-class="{'ft-shift-gear': shiftLight}">{{gearStr}}</span>
     </div>
-    <div class="ft-dt" ng-if="dtFeatures.length">
+    <div class="ft-dt" ng-if="dtFeatures.length || dmodes.length">
       <span class="ft-dt-btn" ng-repeat="f in dtFeatures"
             ng-click="toggleDt(f)" ng-class="{'ft-dt-on': f.active}">
         {{f.label}}: {{f.modeLabel}}
+      </span>
+      <span class="ft-dt-btn" ng-repeat="dm in dmodes"
+            ng-click="toggleDm(dm)" ng-class="{'ft-dt-on': dm.active}">
+        {{dm.label}}
       </span>
     </div>
   </div>
@@ -88,11 +89,13 @@
 
   <!-- Bottom: preset buttons -->
   <div class="ft-bar">
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='MIN'}" ng-click="setPreset('MIN')" style="flex:1">MIN</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='MAX'}" ng-click="setPreset('MAX')" style="flex:1">MAX</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='AUTOMAX'}" ng-click="setPreset('AUTOMAX')" style="flex:1">AUTO MAX</div>
-    <div class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" ng-click="setPreset('CUSTOM')" style="flex:1">CUSTOM</div>
-    <div class="ft-btn ft-btn-ob" ng-class="{'ft-btn-ob-on':forceOB}" ng-click="toggleForceOB()" style="flex:1">OVERBOOST</div>
+    <span class="ft-btn" ng-class="{'ft-btn-on':preset==='MIN'}" ng-click="setPreset('MIN')">OFF</span>
+    <span class="ft-btn" ng-class="{'ft-btn-on':preset==='STOCK'}" ng-click="setPreset('STOCK')">STOCK</span>
+    <span class="ft-btn" ng-class="{'ft-btn-on':preset==='MAX'}" ng-click="setPreset('MAX')">MAX</span>
+    <span class="ft-btn" ng-class="{'ft-btn-on':preset==='AUTOMAX'}" ng-click="setPreset('AUTOMAX')">AUTO MAX</span>
+    <span class="ft-btn" ng-class="{'ft-btn-on':preset==='CUSTOM'}" ng-click="setPreset('CUSTOM')">CUSTOM</span>
+    <span class="ft-btn" ng-click="toggleForceOB()"
+          ng-style="forceOB && {'color':'#ff2244','border-color':'#ff2244','background':'rgba(30,8,10,0.9)'}">OVERBOOST</span>
   </div>
 
   <!-- Turbo timer overlay -->

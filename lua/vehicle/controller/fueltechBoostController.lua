@@ -31,10 +31,8 @@ local loadProfiles
 local sendProfileList
 
 -- Preset boost maps
-local presets = {
-  MIN = {{2000, 4}, {3000, 6}, {4000, 8}, {5000, 10}, {6000, 8}, {7000, 6}},
-  MAX = {{2000, 10}, {3000, 18}, {4000, 28}, {5000, 35}, {6000, 35}, {7000, 30}},
-}
+local presets = {}
+local stockBoostMax = 0  -- saved from the turbo's boostMax at init
 
 local function lerp(a, b, t)
   return a + (b - a) * t
@@ -180,6 +178,8 @@ local function init(jbeamData)
 
   if engine.turbocharger then
     hasTurbo = true
+    -- Save stock boost max for STOCK preset
+    stockBoostMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
     if not engine.turbocharger.setWastegateOffset then
       log("W", "fueltechBoost", "Turbo found but setWastegateOffset not available")
     end
@@ -420,18 +420,21 @@ local function sendPowerCurves()
   local projPeakTorque = 0
   local projPeakHP = 0
 
+  -- Use actual stock boost max for ratio calculations
+  local refBoost = stockBoostMax
+  if refBoost <= 0 then refBoost = electrics.values.turboBoostMax or electrics.values.boostMax or 0 end
+
   for rpmVal = 500, maxEngRPM, 250 do
     local baseTorque = getBaseTorque(rpmVal)
     local stockCoef = turboCoefs[rpmVal] or 1
     local stockTorque = baseTorque * stockCoef
     local ourBoostPSI = getTargetBoost(rpmVal)
-    local stockBoostPSI = baseWastegate
 
+    -- Calculate torque ratio: stock torque curve already includes stock boost,
+    -- so ratio is how much our target differs from stock
     local boostRatio = 1
-    if stockBoostPSI > 0 then
-      boostRatio = ourBoostPSI / stockBoostPSI
-    elseif ourBoostPSI > 0 then
-      boostRatio = 1 + ourBoostPSI * 0.06
+    if refBoost > 0 then
+      boostRatio = ourBoostPSI / refBoost
     end
 
     local projTorque = stockTorque * boostRatio
@@ -467,16 +470,34 @@ end
 
 -- Called from UI to apply a preset boost map
 local function setPreset(name)
-  if presets[name] then
-    boostTable = {}
-    for i, pt in ipairs(presets[name]) do
-      boostTable[i] = {pt[1], pt[2]}
-    end
-    currentPreset = name
-    log("I", "fueltechBoost", "Applied preset: " .. name)
-    getBoostTable()
-    sendPowerCurves()
+  local rpmPoints = {2000, 3000, 4000, 5000, 6000, 7000}
+  if #boostTable > 0 then
+    rpmPoints = {}
+    for i = 1, #boostTable do rpmPoints[i] = boostTable[i][1] end
   end
+
+  if name == "MIN" then
+    boostTable = {}
+    for i, r in ipairs(rpmPoints) do boostTable[i] = {r, 0} end
+  elseif name == "MAX" then
+    local maxVal = electrics.values.turboBoostMax or electrics.values.boostMax or 40
+    if maxVal <= 0 then maxVal = 40 end
+    boostTable = {}
+    for i, r in ipairs(rpmPoints) do boostTable[i] = {r, maxVal} end
+  elseif name == "STOCK" then
+    local sv = stockBoostMax > 0 and stockBoostMax or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
+    if sv <= 0 then sv = 14 end
+    boostTable = {}
+    for i, r in ipairs(rpmPoints) do boostTable[i] = {r, sv} end
+  elseif name == "AUTOMAX" then
+    autoMax()
+    return
+  end
+
+  currentPreset = name
+  log("I", "fueltechBoost", "Applied preset: " .. name)
+  getBoostTable()
+  sendPowerCurves()
 end
 
 -- Auto Max: calculate maximum safe boost at each RPM keeping torque under the damage limit
@@ -508,18 +529,19 @@ local function autoMax()
   local rpmPoints = {2000, 3000, 4000, 5000, 6000, 7000}
   boostTable = {}
 
+  local refBoost2 = stockBoostMax
+  if refBoost2 <= 0 then refBoost2 = electrics.values.turboBoostMax or electrics.values.boostMax or 0 end
+
   for i, rpmVal in ipairs(rpmPoints) do
     local baseTorque = getBaseTorque(rpmVal)
     local stockCoef = turboCoefs[rpmVal] or 1
     local stockTorque = baseTorque * stockCoef
 
     local safePSI = 0
-    if stockTorque > 1 then
-      if baseWastegate > 0 then
-        safePSI = (torqueLimit / stockTorque) * baseWastegate
-      else
-        safePSI = ((torqueLimit / stockTorque) - 1) / 0.06
-      end
+    if stockTorque > 1 and refBoost2 > 0 then
+      -- projTorque = stockTorque * (safePSI / refBoost2)
+      -- torqueLimit = stockTorque * (safePSI / refBoost2)
+      safePSI = (torqueLimit / stockTorque) * refBoost2
     end
 
     -- 95% safety margin, clamp to sane range
