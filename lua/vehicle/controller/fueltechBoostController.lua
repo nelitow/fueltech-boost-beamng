@@ -8,7 +8,8 @@ M.relevantDevice = "mainEngine"
 
 local engine = nil
 local enabled = false
-local hasTurbo = false
+local hasFI = false        -- has any forced induction
+local fiType = nil         -- "turbo" or "supercharger"
 local baseWastegate = 0
 local currentPreset = "CUSTOM"
 
@@ -95,16 +96,11 @@ local OIL_TEMP_CUT = 135     -- °C — cut boost above this oil temp
 local safetyCut = false
 
 local function updateGFX(dt)
-  if not enabled or not engine or not hasTurbo then
+  if not enabled or not engine or not hasFI then
     electrics.values.fueltech_active = 0
     electrics.values.fueltech_targetBoost = 0
     boostOffset = 0
     integralError = 0
-    return
-  end
-
-  if not engine.turbocharger or not engine.turbocharger.setWastegateOffset then
-    electrics.values.fueltech_active = 0
     return
   end
 
@@ -115,15 +111,15 @@ local function updateGFX(dt)
   local gearMul = getGearMultiplier()
   targetPSI = targetPSI * gearMul
 
-  -- Read the turbo's hardware max boost (from BeamNG's tuning slider)
+  -- Read the hardware max boost
   local turboMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
 
-  -- Clamp target to turbo hardware max (unless force overboost is on)
+  -- Clamp target to hardware max (unless force overboost is on)
   if not forceOverboost and turboMax > 0 and targetPSI > turboMax then
     targetPSI = turboMax
   end
 
-  local actualBoost = electrics.values.turboBoost or 0
+  local actualBoost = electrics.values.turboBoost or electrics.values.boost or 0
 
   -- Safety: cut boost if coolant or oil temp too high
   local waterT = electrics.values.watertemp or 0
@@ -131,7 +127,6 @@ local function updateGFX(dt)
   if waterT > WATER_TEMP_CUT or oilT > OIL_TEMP_CUT then
     safetyCut = true
   elseif waterT < (WATER_TEMP_CUT - 5) and oilT < (OIL_TEMP_CUT - 5) then
-    -- 5°C hysteresis before re-enabling
     safetyCut = false
   end
 
@@ -139,24 +134,35 @@ local function updateGFX(dt)
     targetPSI = 0
   end
 
-  -- Publish turbo max and safety state for UI
+  -- Publish state for UI
   electrics.values.fueltech_boostMax = turboMax
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
   electrics.values.fueltech_forceOB = forceOverboost and 1 or 0
 
-  -- Closed-loop PI controller: adjust offset based on error between target and actual
+  -- Closed-loop PI controller
   if currentRPM > 1500 and targetPSI > 0 then
     local err = targetPSI - actualBoost
     integralError = integralError + err * dt * KI
     integralError = math.max(-IMAX, math.min(integralError, IMAX))
     boostOffset = err * KP + integralError
   else
-    -- Below boost threshold: reset controller, let turbo idle naturally
     integralError = 0
-    boostOffset = -10  -- pull wastegate open to prevent boost at idle
+    boostOffset = -10
   end
 
-  engine.turbocharger.setWastegateOffset(boostOffset)
+  -- Apply control via the appropriate device
+  if fiType == "turbo" then
+    if engine.turbocharger and engine.turbocharger.setWastegateOffset then
+      engine.turbocharger.setWastegateOffset(boostOffset)
+    end
+  elseif fiType == "supercharger" then
+    -- For superchargers: setBypassPressure controls the bypass valve
+    -- Higher pressure = more boost (bypass stays closed longer)
+    if engine.supercharger and engine.supercharger.setBypassPressure then
+      local bypassPSI = math.max(0, targetPSI)
+      engine.supercharger.setBypassPressure(bypassPSI)
+    end
+  end
 
   electrics.values.fueltech_targetBoost = targetPSI
   electrics.values.fueltech_currentBoost = actualBoost
@@ -176,16 +182,25 @@ local function init(jbeamData)
     return
   end
 
-  if engine.turbocharger then
-    hasTurbo = true
-    -- Save stock boost max for STOCK preset
+  -- Detect forced induction: check isExisting to find the real device
+  local hasTurboReal = engine.turbocharger and engine.turbocharger.isExisting
+  local hasSCReal = engine.supercharger and engine.supercharger.isExisting
+
+  log("I", "fueltechBoost", "Forced induction: turbo=" .. tostring(hasTurboReal) .. " supercharger=" .. tostring(hasSCReal))
+
+  if hasTurboReal and engine.turbocharger.setWastegateOffset then
+    fiType = "turbo"
+    hasFI = true
     stockBoostMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
-    if not engine.turbocharger.setWastegateOffset then
-      log("W", "fueltechBoost", "Turbo found but setWastegateOffset not available")
-    end
+    log("I", "fueltechBoost", "Using turbocharger (setWastegateOffset)")
+  elseif hasSCReal and engine.supercharger.setBypassPressure then
+    fiType = "supercharger"
+    hasFI = true
+    stockBoostMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
+    log("I", "fueltechBoost", "Using supercharger (setBypassPressure)")
   else
-    log("W", "fueltechBoost", "No turbocharger detected, boost controller disabled")
-    hasTurbo = false
+    log("W", "fueltechBoost", "No controllable forced induction found, boost controller disabled")
+    hasFI = false
     enabled = false
     return
   end
@@ -224,9 +239,9 @@ local function init(jbeamData)
   -- Load saved profiles
   loadProfiles()
 
-  if enabled and hasTurbo then
+  if enabled and hasFI then
     M.updateGFX = updateGFX
-    log("I", "fueltechBoost", "FuelTech Boost Controller initialized with " .. #boostTable .. " breakpoints, base wastegate: " .. baseWastegate .. " PSI")
+    log("I", "fueltechBoost", "FuelTech Boost Controller initialized: " .. fiType .. ", " .. #boostTable .. " breakpoints, stockBoostMax: " .. stockBoostMax .. " PSI")
   end
 end
 
@@ -238,8 +253,12 @@ local function reset()
   electrics.values.fueltech_gearMul = 1
   boostOffset = 0
   integralError = 0
-  if engine and hasTurbo and engine.turbocharger and engine.turbocharger.setWastegateOffset then
-    engine.turbocharger.setWastegateOffset(0)
+  if engine and hasFI then
+    if fiType == "turbo" and engine.turbocharger and engine.turbocharger.setWastegateOffset then
+      engine.turbocharger.setWastegateOffset(0)
+    elseif fiType == "supercharger" and engine.supercharger and engine.supercharger.setBypassPressure then
+      engine.supercharger.setBypassPressure(stockBoostMax > 0 and stockBoostMax or 0)
+    end
   end
 end
 
@@ -383,11 +402,13 @@ local function getProfileList()
 end
 
 local function sendPowerCurves()
-  if not engine or not hasTurbo or not engine.turbocharger then return end
+  if not engine or not hasFI then return end
 
   local turboCoefs = {}
-  if engine.turbocharger.getTorqueCoefs then
+  if fiType == "turbo" and engine.turbocharger and engine.turbocharger.getTorqueCoefs then
     turboCoefs = engine.turbocharger.getTorqueCoefs()
+  elseif fiType == "supercharger" and engine.supercharger and engine.supercharger.getTorqueCoefs then
+    turboCoefs = engine.supercharger.getTorqueCoefs()
   end
 
   local peakTorqueNm = 0
@@ -502,7 +523,7 @@ end
 
 -- Auto Max: calculate maximum safe boost at each RPM keeping torque under the damage limit
 local function autoMax()
-  if not engine or not hasTurbo or not engine.turbocharger then return end
+  if not engine or not hasFI then return end
 
   -- Determine torque limit: prefer maxTorqueRating (damage threshold), fall back to peak torque
   local torqueLimit = -1
@@ -522,8 +543,10 @@ local function autoMax()
   end
 
   local turboCoefs = {}
-  if engine.turbocharger.getTorqueCoefs then
+  if fiType == "turbo" and engine.turbocharger and engine.turbocharger.getTorqueCoefs then
     turboCoefs = engine.turbocharger.getTorqueCoefs()
+  elseif fiType == "supercharger" and engine.supercharger and engine.supercharger.getTorqueCoefs then
+    turboCoefs = engine.supercharger.getTorqueCoefs()
   end
 
   local rpmPoints = {2000, 3000, 4000, 5000, 6000, 7000}

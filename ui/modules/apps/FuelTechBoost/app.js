@@ -8,35 +8,53 @@ angular.module('beamng.apps')
     link: function (scope, element) {
       var streamsList = ['electrics', 'engineInfo']
       StreamsManager.add(streamsList)
-      // Force app to fill viewport
+      // Force app widget to fill the game viewport
       var root = element[0]
       function forceFullscreen () {
-        var parent = root.parentElement
-        if (parent) {
-          var pw = parent.offsetWidth || window.innerWidth
-          var ph = parent.offsetHeight || window.innerHeight
-          if (pw > 100 && ph > 100) {
-            root.style.width = pw + 'px'
-            root.style.height = ph + 'px'
-            if (!lay || appW !== pw || appH !== ph) {
-              lay = null
-              doLayout(pw, ph)
-              drawAll()
-            }
+        var vw = window.innerWidth, vh = window.innerHeight
+        if (vw < 100 || vh < 100) return
+
+        // Resize the widget container (parent of our app root)
+        // BeamNG stores widget size in the parent's inline style
+        var container = root.parentElement
+        while (container && container !== document.body) {
+          if (container.style && (container.style.width || container.style.height)) {
+            container.style.width = vw + 'px'
+            container.style.height = vh + 'px'
+            container.style.left = '0px'
+            container.style.top = '0px'
+            container.style.right = ''
+            container.style.bottom = ''
           }
+          container = container.parentElement
+        }
+
+        // Also size our root element
+        root.style.width = vw + 'px'
+        root.style.height = vh + 'px'
+
+        if (!lay || appW !== vw || appH !== vh) {
+          lay = null
+          doLayout(vw, vh)
+          drawAll()
         }
       }
       var resizeObs = null
       try {
         resizeObs = new ResizeObserver(forceFullscreen)
-        resizeObs.observe(root.parentElement || root)
+        resizeObs.observe(document.body)
       } catch(e) {}
       window.addEventListener('resize', forceFullscreen)
+      // Run immediately and periodically to catch late layout changes
+      setTimeout(forceFullscreen, 100)
+      setTimeout(forceFullscreen, 500)
+      var fullscreenInterval = setInterval(forceFullscreen, 2000)
 
       scope.$on('$destroy', function () {
         StreamsManager.remove(streamsList)
         if (resizeObs) resizeObs.disconnect()
         window.removeEventListener('resize', forceFullscreen)
+        if (fullscreenInterval) clearInterval(fullscreenInterval)
         if (initTimer) clearTimeout(initTimer)
         if (cvsMap) {
           cvsMap.removeEventListener('mousedown', onDown)
@@ -942,19 +960,20 @@ angular.module('beamng.apps')
             }
           }
 
-          // Feature detection — sample first 30 frames to detect turbo/EGT
+          // Feature detection — detect forced induction (turbo or supercharger) and EGT
+          var hasFI = !!(s.electrics && s.electrics.fueltech_active)
+          var hasBoostData = turboRpm > 0 || boost > 0.5 || boostMax > 0 || hasFI
           if (!detectDone) {
             detectFrames++
-            if (turboRpm > 0 || boost > 0.5 || (s.electrics && s.electrics.turboBoost > 0)) { hasTurbo = true; scope.hasTurbo = true }
+            if (hasBoostData) { hasTurbo = true; scope.hasTurbo = true }
             if (egt > 0) { hasEgt = true; scope.hasEgt = true }
             if (detectFrames >= 30) {
               detectDone = true
-              lay = null // force re-layout to adjust for hidden elements
+              lay = null
               applyGraphVisibility()
             }
           } else {
-            // Late detection: if turbo/EGT appears after initial scan
-            if (!hasTurbo && (turboRpm > 0 || boost > 0.5)) { hasTurbo = true; scope.hasTurbo = true; lay = null; applyGraphVisibility() }
+            if (!hasTurbo && hasBoostData) { hasTurbo = true; scope.hasTurbo = true; lay = null; applyGraphVisibility() }
             if (!hasEgt && egt > 0) { hasEgt = true; scope.hasEgt = true; lay = null; applyGraphVisibility() }
           }
 

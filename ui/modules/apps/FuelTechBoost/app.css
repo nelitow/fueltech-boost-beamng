@@ -1,4 +1,4 @@
-/* Root — transparent HUD overlay, JS handles all positioning */
+/* Root — transparent HUD overlay, JS forces viewport size */
 .ft {
   background: transparent;
   color: #d8dce8;
