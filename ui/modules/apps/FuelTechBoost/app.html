@@ -12,7 +12,7 @@
     <span class="ft-toggle" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-ver">1.3.0</span>
+    <span class="ft-ver">1.4.0</span>
   </div>
 
   <!-- Warning bar (below header, not overlapping) -->
@@ -28,8 +28,15 @@
     <span class="ft-telem-item">CLT <b>{{clutchStr}}%</b></span>
     <span class="ft-telem-item">ALT <b>{{altStr}}m</b></span>
     <span class="ft-telem-item">ODO <b>{{odoStr}}km</b></span>
+    <span class="ft-telem-item" ng-if="brakeTemps.length">BRK
+      <b ng-repeat="bt in brakeTemps" ng-style="{'color': bt.color}">{{bt.val}}</b></span>
     <span class="ft-telem-cel ft-blink" ng-if="cel">CEL</span>
     <span class="ft-telem-fuel ft-blink" ng-if="lowFuel">LOW FUEL</span>
+  </div>
+
+  <!-- Damage log -->
+  <div class="ft-dmg" ng-if="damageLog.length">
+    <span class="ft-dmg-item" ng-repeat="d in damageLog" ng-style="{'color': d.color}">{{d.text}}</span>
   </div>
 
   <!-- Shift light overlay -->

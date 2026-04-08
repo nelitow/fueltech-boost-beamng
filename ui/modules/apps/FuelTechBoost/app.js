@@ -6,7 +6,7 @@ angular.module('beamng.apps')
     restrict: 'EA',
     scope: true,
     link: function (scope, element) {
-      var streamsList = ['electrics', 'engineInfo']
+      var streamsList = ['electrics', 'engineInfo', 'wheelThermalData']
       StreamsManager.add(streamsList)
       // Force app widget to fill the game viewport
       var root = element[0]
@@ -96,6 +96,8 @@ angular.module('beamng.apps')
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
       scope.cel = false; scope.lowFuel = false
+      scope.brakeTemps = []
+      scope.damageLog = []
 
       // Shift light
       scope.shiftLight = false
@@ -166,6 +168,58 @@ angular.module('beamng.apps')
             scope.gearMultipliers = d.multipliers || []
           })
         }
+      })
+
+      // Damage tracking
+      var damageLabels = {
+        // Engine
+        'engine.oilStarvation': 'OIL STARVE', 'engine.coolantHot': 'COOLANT HOT',
+        'engine.oilHot': 'OIL HOT', 'engine.pistonRingsDamaged': 'PISTON RINGS',
+        'engine.rodBearingsDamaged': 'ROD BEARINGS', 'engine.headGasketDamaged': 'HEAD GASKET',
+        'engine.turbochargerHot': 'TURBO HOT', 'engine.engineReducedTorque': 'REDUCED POWER',
+        'engine.mildOverrevDamage': 'OVERREV', 'engine.catastrophicOverrevDamage': 'OVERREV CRITICAL',
+        'engine.engineDisabled': 'ENGINE DEAD', 'engine.blockMelted': 'BLOCK MELTED',
+        'engine.engineLockedUp': 'ENGINE LOCKED', 'engine.radiatorLeak': 'RAD LEAK',
+        'engine.oilpanLeak': 'OIL LEAK', 'engine.engineHydrolocked': 'HYDROLOCKED',
+        // Wheels
+        'wheels.brakeOverHeatFL': 'BRK OVERHEAT FL', 'wheels.brakeOverHeatFR': 'BRK OVERHEAT FR',
+        'wheels.brakeOverHeatRL': 'BRK OVERHEAT RL', 'wheels.brakeOverHeatRR': 'BRK OVERHEAT RR',
+        'wheels.tireFL': 'TIRE DMG FL', 'wheels.tireFR': 'TIRE DMG FR',
+        'wheels.tireRL': 'TIRE DMG RL', 'wheels.tireRR': 'TIRE DMG RR',
+        'wheels.brakeFL': 'BRK DMG FL', 'wheels.brakeFR': 'BRK DMG FR',
+        'wheels.brakeRL': 'BRK DMG RL', 'wheels.brakeRR': 'BRK DMG RR',
+        // Powertrain
+        'powertrain.mainEngine': 'ENGINE DMG', 'powertrain.driveshaft': 'DRIVESHAFT',
+        'powertrain.wheelaxleFL': 'AXLE FL', 'powertrain.wheelaxleFR': 'AXLE FR',
+        'powertrain.wheelaxleRL': 'AXLE RL', 'powertrain.wheelaxleRR': 'AXLE RR'
+      }
+
+      scope.$on('DamageData', function (_, data) {
+        if (!data) return
+        scope.$evalAsync(function () {
+          var log = []
+          function scan(obj, prefix) {
+            if (!obj || typeof obj !== 'object') return
+            for (var k in obj) {
+              var key = prefix ? prefix + '.' + k : k
+              var v = obj[k]
+              if (typeof v === 'object' && v !== null) {
+                scan(v, key)
+              } else if (v && v !== 0 && v !== false) {
+                var label = damageLabels[key] || key.toUpperCase()
+                var color = '#ff6600'
+                var vs = String(v).toLowerCase()
+                if (vs === 'true' || vs === '1') color = '#ff4466'
+                else if (typeof v === 'number' && v > 50) color = '#ff2244'
+                else if (typeof v === 'number' && v > 20) color = '#ff6600'
+                else color = '#ffcc00'
+                log.push({text: label, color: color})
+              }
+            }
+          }
+          scan(data, '')
+          scope.damageLog = log
+        })
       })
 
       function requestData () {
@@ -309,6 +363,13 @@ angular.module('beamng.apps')
         var telemEl = q('.ft-telem')
         if (telemEl) {
           telemEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;height:'+subH+'px;overflow:hidden;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+          subY += subH + 2
+        }
+
+        // Damage log: below telemetry strip
+        var dmgEl = q('.ft-dmg')
+        if (dmgEl) {
+          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;max-height:'+(subH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
         // RPM gauge: rows 2-4, cols 10-12
@@ -1006,6 +1067,32 @@ angular.module('beamng.apps')
           scope.altStr=Math.round(altitude).toString()
           scope.odoStr=(odometer/1000).toFixed(1)
           scope.cel=cel; scope.lowFuel=lowFuel
+
+          // Brake temperatures from wheelThermalData or electrics
+          var bts = []
+          var wheelNames = ['FL','FR','RL','RR']
+          if (s.wheelThermalData) {
+            for (var wi = 0; wi < wheelNames.length; wi++) {
+              var wn = wheelNames[wi]
+              var wt = null
+              // wheelThermalData can be indexed by name or number
+              for (var wk in s.wheelThermalData) {
+                var wd = s.wheelThermalData[wk]
+                if (wd && wd.name && wd.name.indexOf(wn) >= 0 && wd.brakeSurfaceTemperature !== undefined) {
+                  wt = wd.brakeSurfaceTemperature
+                  break
+                }
+              }
+              if (wt === null && s.electrics) {
+                wt = s.electrics['brakeSurfaceTemperature_' + wn] || null
+              }
+              if (wt !== null) {
+                var c = wt < 100 ? '#4488ff' : wt < 300 ? '#00cc55' : wt < 500 ? '#ffcc00' : '#ff2244'
+                bts.push({val: Math.round(wt) + '°', color: c})
+              }
+            }
+          }
+          scope.brakeTemps = bts
 
           if (!lay) {
             var root = element[0]
