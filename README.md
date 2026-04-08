@@ -7,6 +7,8 @@ Works with **turbocharged** and **supercharged** vehicles. On naturally aspirate
 ![BeamNG.drive](https://img.shields.io/badge/BeamNG.drive-0.34+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+![FuelTech Dashboard](docs/screenshot_turbo.png)
+
 ---
 
 ## Installation (Step by Step)
