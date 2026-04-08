@@ -128,6 +128,7 @@ angular.module('beamng.apps')
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleFeature("' + f.name + '")') } catch(e) {}
       }
       scope.toggleForceOB = function () {
+        scope.forceOB = !scope.forceOB
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleForceOverboost()') } catch(e) {}
       }
 
@@ -665,7 +666,44 @@ angular.module('beamng.apps')
         if(scope.active&&rpm>50){var rx=ttx(rpm)
           var vg2=ctx.createLinearGradient(0,gp.t,0,gp.t+ggh)
           vg2.addColorStop(0,'rgba(0,255,136,0)');vg2.addColorStop(0.5,'rgba(0,255,136,0.04)');vg2.addColorStop(1,'rgba(0,255,136,0)')
-          ctx.fillStyle=vg2;ctx.fillRect(rx-0.5,gp.t,1,ggh)}
+          ctx.fillStyle=vg2;ctx.fillRect(rx-0.5,gp.t,1,ggh)
+
+          // Live power/torque dot — interpolate projected curves at current RPM
+          var liveNm=0,liveHP=0
+          for(var li=0;li<td.length-1;li++){
+            if(rpm>=td[li].rpm&&rpm<=td[li+1].rpm){
+              var lt=(rpm-td[li].rpm)/(td[li+1].rpm-td[li].rpm)
+              liveNm=td[li].nm+(td[li+1].nm-td[li].nm)*lt
+              liveHP=pd[li].hp+(pd[li+1].hp-pd[li].hp)*lt
+              break
+            }
+          }
+          // Scale by engine load for actual output
+          liveNm=liveNm*engineLoad; liveHP=liveHP*engineLoad
+
+          var dotR2=cl(w*0.008,3,6)
+          // Torque dot (red)
+          if(liveNm>0){
+            var tDotY=tty(liveNm)
+            ctx.shadowColor='#ff6666';ctx.shadowBlur=dotR2*3
+            ctx.beginPath();ctx.arc(rx,tDotY,dotR2,0,6.283);ctx.fillStyle='#ff6666';ctx.fill()
+            ctx.shadowBlur=0
+          }
+          // Power dot (blue)
+          if(liveHP>0){
+            var pDotY=pty(liveHP)
+            ctx.shadowColor='#6699ff';ctx.shadowBlur=dotR2*3
+            ctx.beginPath();ctx.arc(rx,pDotY,dotR2,0,6.283);ctx.fillStyle='#6699ff';ctx.fill()
+            ctx.shadowBlur=0
+          }
+          // Live readout text
+          var lfx=gp.l+ggw-4, lfy=gp.t+ggh-4
+          ctx.font='700 '+cl(g.fs,7,11).toFixed(0)+'px Consolas,monospace'
+          ctx.textAlign='right'; ctx.fillStyle='#ff6666'
+          ctx.fillText(Math.round(liveNm)+' Nm',lfx,lfy-g.fs*1.1)
+          ctx.fillStyle='#6699ff'
+          ctx.fillText(Math.round(liveHP)+' HP',lfx,lfy)
+        }
       }
 
       /* ==================== DRAG (mouse + touch) ==================== */
