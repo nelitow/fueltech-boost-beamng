@@ -926,7 +926,6 @@ angular.module('beamng.apps')
           scope.altStr=Math.round(altitude).toString()
           scope.odoStr=(odometer/1000).toFixed(1)
           scope.cel=cel; scope.lowFuel=lowFuel
-          scope.forceOB=!!(lastElectrics&&lastElectrics.fueltech_forceOB)
 
           if (!lay) {
             var root = element[0]
