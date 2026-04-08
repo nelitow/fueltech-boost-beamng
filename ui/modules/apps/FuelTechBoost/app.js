@@ -271,7 +271,7 @@ angular.module('beamng.apps')
         if (h2oEl) h2oEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+halfW+GAP)+'px;top:'+ohY+'px;width:'+halfW+'px;height:'+ohH+'px;overflow:hidden'
 
         // G-Force: rows 2-4, cols 1-2
-        gridBox(q('.ft-c-gforce'), 1, 2, 2, 3, GRAPH_BG)
+        gridBox(q('.ft-c-gforce'), 1, 2, 2, 3)
 
         // Drag Timer: rows 5-6, cols 1-2
         gridBox(q('.ft-c-drag'), 1, 5, 2, 2,
@@ -484,9 +484,8 @@ angular.module('beamng.apps')
         var cx = w/2, cy = h*0.45, r = Math.min(w,h)*0.3
         var maxG = 2.0
 
-        // Background circle
+        // Circle outline
         ctx.beginPath(); ctx.arc(cx,cy,r,0,6.283)
-        ctx.fillStyle='rgba(10,12,20,0.5)'; ctx.fill()
         ctx.strokeStyle='#2a3048'; ctx.lineWidth=1; ctx.stroke()
 
         // Cross hairs
@@ -513,11 +512,6 @@ angular.module('beamng.apps')
         ctx.font = '700 '+fs.toFixed(0)+'px Consolas,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle'
         ctx.fillStyle = '#ffffff'; ctx.fillText(gMag.toFixed(2)+'G', cx, cy+r+fs*1.3)
 
-        // Lateral / longitudinal labels
-        var lfs = Math.max(fs*0.7, 6)
-        ctx.font = lfs.toFixed(0)+'px Consolas,monospace'; ctx.fillStyle = '#7880a0'
-        ctx.fillText('LAT '+gForceX.toFixed(1), cx, h-lfs*0.5)
-        ctx.fillText('G-FORCE', cx, h-lfs*2.2)
       }
 
       /* ==================== GRID HELPER ==================== */
