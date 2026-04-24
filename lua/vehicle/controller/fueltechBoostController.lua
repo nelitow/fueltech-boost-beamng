@@ -23,6 +23,15 @@ local gearMultipliers = {0.5, 0.65, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0}
 -- Force overboost: bypass boostMax clamp
 local forceOverboost = false
 
+-- Anti-lag system (ALS)
+local alsEnabled = false       -- user toggle
+local alsFiring = false        -- currently firing (off-throttle, keeping turbo spooled)
+local ALS_MIN_RPM = 3500       -- don't fire below this RPM
+local ALS_THROTTLE_OPEN = 0.25 -- hold throttle at 25% when ALS fires
+local ALS_WASTEGATE_HOLD = 5   -- wastegate offset to hold during ALS (keeps turbo spinning)
+local ALS_EGT_RISE = 150       -- extra EGT degrees when ALS fires (simulated)
+local alsEgtAdd = 0            -- current simulated EGT addition (smoothed)
+
 -- Saved profiles
 local savedProfiles = {}
 local profileDir = nil
@@ -139,6 +148,47 @@ local function updateGFX(dt)
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
   electrics.values.fueltech_forceOB = forceOverboost and 1 or 0
 
+  -- ── Anti-Lag System (ALS) ──
+  -- When enabled and driver lifts off throttle at high RPM:
+  -- keep throttle partially open + hold wastegate to maintain turbo spool
+  local inputThrottle = electrics.values.throttle or 0
+  local alsWastagateOverride = nil
+
+  if alsEnabled and fiType == "turbo" and not safetyCut then
+    local isOffThrottle = inputThrottle < 0.08
+    local rpmHigh = currentRPM > ALS_MIN_RPM
+    local gearEngaged = (electrics.values.gear_M or electrics.values.gearIndex or 0) > 0
+
+    if isOffThrottle and rpmHigh and gearEngaged then
+      -- ALS FIRING: hold throttle partially open to keep exhaust flowing
+      alsFiring = true
+      electrics.values.throttle = ALS_THROTTLE_OPEN
+
+      -- Hold wastegate to maintain boost pressure (don't let it dump)
+      alsWastagateOverride = ALS_WASTEGATE_HOLD
+
+      -- EGT rise (smooth ramp up — unburned fuel igniting in exhaust)
+      alsEgtAdd = math.min(ALS_EGT_RISE, alsEgtAdd + ALS_EGT_RISE * 3 * dt)
+    else
+      alsFiring = false
+      -- Smooth EGT cooldown
+      alsEgtAdd = math.max(0, alsEgtAdd - ALS_EGT_RISE * 1.5 * dt)
+    end
+  else
+    alsFiring = false
+    alsEgtAdd = math.max(0, alsEgtAdd - ALS_EGT_RISE * 2 * dt)
+  end
+
+  -- Publish ALS state
+  electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0
+  electrics.values.fueltech_als_firing = alsFiring and 1 or 0
+
+  -- Simulate EGT increase from ALS combustion in exhaust manifold
+  if alsEgtAdd > 0 then
+    local curEgt = electrics.values.exhaustTemperature or electrics.values.egt or 0
+    electrics.values.exhaustTemperature = curEgt + alsEgtAdd
+  end
+
   -- Closed-loop PI controller
   if currentRPM > 1500 and targetPSI > 0 then
     local err = targetPSI - actualBoost
@@ -148,6 +198,11 @@ local function updateGFX(dt)
   else
     integralError = 0
     boostOffset = -10
+  end
+
+  -- ALS wastegate override: keep wastegate from dumping when ALS fires
+  if alsWastagateOverride then
+    boostOffset = math.max(boostOffset, alsWastagateOverride)
   end
 
   -- Apply control via the appropriate device
@@ -251,8 +306,11 @@ local function reset()
   electrics.values.fueltech_currentBoost = 0
   electrics.values.fueltech_currentRPM = 0
   electrics.values.fueltech_gearMul = 1
+  electrics.values.fueltech_als_firing = 0
   boostOffset = 0
   integralError = 0
+  alsFiring = false
+  alsEgtAdd = 0
   if engine and hasFI then
     if fiType == "turbo" and engine.turbocharger and engine.turbocharger.setWastegateOffset then
       engine.turbocharger.setWastegateOffset(0)
@@ -291,6 +349,17 @@ end
 local function toggleForceOverboost()
   forceOverboost = not forceOverboost
   log("I", "fueltechBoost", "Force overboost: " .. tostring(forceOverboost))
+end
+
+local function toggleAntiLag()
+  alsEnabled = not alsEnabled
+  if not alsEnabled then
+    alsFiring = false
+    alsEgtAdd = 0
+    electrics.values.fueltech_als_firing = 0
+  end
+  electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0
+  log("I", "fueltechBoost", "Anti-lag system: " .. (alsEnabled and "enabled" or "disabled"))
 end
 
 local function setGearMultiplier(gearIdx, mul)
@@ -591,6 +660,7 @@ M.setPreset = setPreset
 M.autoMax = autoMax
 M.toggleBoostByGear = toggleBoostByGear
 M.toggleForceOverboost = toggleForceOverboost
+M.toggleAntiLag = toggleAntiLag
 M.setGearMultiplier = setGearMultiplier
 M.getBoostByGearInfo = getBoostByGearInfo
 M.saveProfile = saveProfile

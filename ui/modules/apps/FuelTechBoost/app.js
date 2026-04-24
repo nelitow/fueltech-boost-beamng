@@ -93,6 +93,16 @@ angular.module('beamng.apps')
       scope.dtFeatures = []
       scope.dmodes = []
       scope.forceOB = false
+      scope.hasTCS = false
+      scope.tcsActive = true
+      scope.tcsCut = 0  // 0-1, how much throttle is being cut
+      scope.hasABS = false
+      scope.absActive = true
+      scope.absInterfering = false
+
+      // Anti-lag system
+      scope.alsActive = false
+      scope.alsFiring = false
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
       scope.cel = false; scope.lowFuel = false
@@ -113,18 +123,42 @@ angular.module('beamng.apps')
       scope.drag200done = false
       var dragActive = false, dragStart = 0, drag100t = 0, drag200t = 0
 
-      // Turbo timer
+      // Turbo cooldown timer
       scope.turboTimerActive = false
-      scope.turboTimerStr = '0.0'
-      var turboTimerStart = 0, turboTimerDuration = 30, turboWasRunning = false, lastTurboRpm = 0
+      scope.turboTimerStr = '0'
+      var turboTimerStart = 0, turboTimerDuration = 30
 
       var map = [[2000,5],[3000,10],[4000,15],[5000,20],[6000,20],[7000,18]]
       var pwrData = null
+
+      // Stock torque/power curves from BeamNG's mainController (authoritative source)
+      var stockTorqueArr = null  // array indexed by RPM: stockTorqueArr[rpm] = torque in Nm
+      var stockPowerArr = null   // array indexed by RPM: stockPowerArr[rpm] = power in kW
+      var stockMaxRPM = 0
+      var stockCurveName = ''
 
       scope.$on('fueltechBoostTable', function (_, d) {
         if (d && d.length) { map = []; for (var i = 0; i < d.length; i++) map.push([d[i].rpm, d[i].psi]) }
       })
       scope.$on('fueltechPowerCurves', function (_, d) { if (d) { pwrData = d; drawPower() } })
+
+      // Listen for BeamNG's native torque curve data (same source as default power app)
+      scope.$on('TorqueCurveChanged', function (_, data) {
+        if (!data || !data.curves) return
+        stockMaxRPM = data.maxRPM || 7000
+        // Find the last curve (highest index = with forced induction if present)
+        var lastKey = null
+        for (var key in data.curves) {
+          if (lastKey === null || parseInt(key) > parseInt(lastKey)) lastKey = key
+        }
+        if (lastKey !== null && data.curves[lastKey]) {
+          stockTorqueArr = data.curves[lastKey].torque  // raw Nm array indexed by RPM
+          stockPowerArr = data.curves[lastKey].power     // raw kW array indexed by RPM
+          stockCurveName = data.curves[lastKey].name || ''
+        }
+        // Rebuild power graph with authoritative data
+        if (stockTorqueArr) drawPower()
+      })
 
       scope.$on('fueltechDrivetrainInfo', function (_, data) {
         if (!data || !data.length) return
@@ -156,6 +190,9 @@ angular.module('beamng.apps')
               electricsKey: data[i].electricsKey,
               active: true
             })
+            // Detect TCS/ABS availability for dedicated buttons
+            if (data[i].name === 'tcs') scope.hasTCS = true
+            if (data[i].name === 'absController') scope.hasABS = true
           }
         })
       })
@@ -226,8 +263,17 @@ angular.module('beamng.apps')
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").getBoostTable()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").getInfo()') } catch (e) {}
+        // Request BeamNG's native torque curve data (same as default power app)
+        try { bngApi.activeObjectLua('controller.mainController.sendTorqueData()') } catch (e) {}
       }
       requestData()
+
+      // Also request torque data on vehicle focus change
+      scope.$on('VehicleFocusChanged', function () {
+        stockTorqueArr = null; stockPowerArr = null
+        try { bngApi.activeObjectLua('controller.mainController.sendTorqueData()') } catch (e) {}
+        requestData()
+      })
 
       scope.setPreset = function (n) {
         scope.preset = n
@@ -246,6 +292,23 @@ angular.module('beamng.apps')
         scope.forceOB = !scope.forceOB
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleForceOverboost()') } catch(e) {}
       }
+      // Debounce flags — prevent electrics sync from overwriting optimistic toggle for a few frames
+      var tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
+      scope.toggleTC = function () {
+        scope.tcsActive = !scope.tcsActive
+        tcToggleDebounce = 10  // ignore electrics sync for 10 frames
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("tcs")') } catch(e) {}
+      }
+      scope.toggleALS = function () {
+        scope.alsActive = !scope.alsActive
+        alsToggleDebounce = 10
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleAntiLag()') } catch(e) {}
+      }
+      scope.toggleABS = function () {
+        scope.absActive = !scope.absActive
+        absToggleDebounce = 10
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("absController")') } catch(e) {}
+      }
 
       // Drag timer
       scope.resetDrag = function () {
@@ -257,28 +320,16 @@ angular.module('beamng.apps')
       scope.showGraphs = true
       scope.toggleGraphs = function () {
         scope.showGraphs = !scope.showGraphs
-        applyGraphVisibility()
+        lay = null
+        if (appW > 100 && appH > 100) {
+          doLayout(appW, appH)
+          drawAll()
+        }
       }
 
       function applyGraphVisibility () {
-        var vis = scope.showGraphs ? '' : 'none'
-        var els = ['.ft-c-thr','.ft-c-drag']
-        // Turbo-only toggleable elements (boost map, power, presets)
-        if (hasTurbo) { els.push('.ft-c-map','.ft-c-pwr') }
-        // EGT only if available
-        if (hasEgt) { els.push('.ft-c-egt') }
-        for (var i = 0; i < els.length; i++) {
-          var el = q(els[i])
-          if (el) el.style.display = vis
-        }
-        // Always hide unavailable elements regardless of graph toggle
-        if (!hasTurbo) {
-          var hide = ['.ft-c-map','.ft-c-pwr','.ft-c-bst','.ft-c-trb']
-          for (var j = 0; j < hide.length; j++) { var hel = q(hide[j]); if (hel) hel.style.display = 'none' }
-        }
-        if (!hasEgt) {
-          var egtEl = q('.ft-c-egt'); if (egtEl) egtEl.style.display = 'none'
-        }
+        // All visibility is handled by doLayout — just trigger relayout
+        lay = null
       }
 
       function cl (v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }
@@ -297,21 +348,26 @@ angular.module('beamng.apps')
         return 0
       }
 
-      /* ==================== 12x12 GRID LAYOUT ==================== */
-      /*
-       *      1    2    3    4    5    6    7    8    9   10   11   12
-       *  1  [HEADER BAR ─────────────────────────────────────────── ]
-       *  2  │ G-FORCE     │                            │ RPM       │
-       *  3  │             │                            │ GAUGE     │
-       *  4  │             │                            │           │
-       *  5  │ DRAG TIMER  │                            │ PSI       │
-       *  6  │             │                            │ GAUGE     │
-       *  7  │ THR  │ TRB  │ EGT  │                     │           │
-       *  8  │      │      │      │                     │ OIL │ H2O │
-       *  9  │ BOOST MAP          │ PWR/TQ       │      │     │     │
-       * 10  │                    │              │ SPD/GEAR         │
-       * 11  │                    │              │                  │
-       * 12  [MIN] [MAX] [AUTOMAX] [CUSTOM]      │                  │
+      /* ==================== LAYOUT ==================== */
+      /*  Left-stack layout — RPM + Speed stacked left, boost fills right:
+       *
+       *  ┌─ HEADER ─────────────────────────────────────────┐  3.5%
+       *  ├─ TELEM STRIP ────────────────────────────────────┤  2.8%
+       *  │ RPM GAUGE │  BOOST PSI (4-8)   │ TURBO RPM      │
+       *  │ (cols 1-3)│                    │ (cols 9-12)    │  ~55%
+       *  ├───────────┤                    │                │
+       *  │ SPEED+GEAR│                    │                │
+       *  │ (cols 1-3)│                    │                │
+       *  ├───────────┴────────────────────┴────────────────┤
+       *  │ OIL │ H2O │ THR │ EGT │ G-FORCE │ DRAG TIMER   │  ~10%
+       *  ├─────┴─────┴─────┴─────┴─────────┴──────────────┤  (bars)
+       *  │ BOOST MAP (cols 1-6) │ POWER CURVE (cols 7-12)  │  ~32%
+       *  ├─────────────────────────────────────────────────┤
+       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC] │  3.5%
+       *  └─────────────────────────────────────────────────┘
+       *
+       *  NA cars: RPM+Speed stack widens to cols 1-5.
+       *  No EGT: bars expand to fill gap (3-col each).
        */
       var GAP = 4
       var appW = 0, appH = 0
@@ -321,18 +377,6 @@ angular.module('beamng.apps')
 
       var GRAPH_BG = 'background:rgba(6,8,14,0.6);border:1px solid rgba(24,28,40,0.3);border-radius:8px'
 
-      function gridBox (el, col, row, cs, rs, extra) {
-        if (!el) return
-        var cw = (appW - GAP) / 12
-        var ch = (appH - GAP) / 12
-        var x = GAP + (col - 1) * cw
-        var y = GAP + (row - 1) * ch
-        var w = cs * cw - GAP
-        var h = rs * ch - GAP
-        el.style.cssText = 'position:absolute;box-sizing:border-box;left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+h+'px;overflow:hidden'
-        if (extra) el.style.cssText += ';' + extra
-      }
-
       function doLayout (W, H) {
         if (W < 100 || H < 100) return null
         if (lay && appW === W && appH === H) return lay
@@ -341,133 +385,150 @@ angular.module('beamng.apps')
         var root = element[0]
         root.style.cssText = 'position:relative;overflow:hidden;width:'+W+'px;height:'+H+'px;background:transparent'
 
-        var cw = (W - GAP) / 12
-        var ch = (H - GAP) / 12
+        var G = GAP
+        var usableW = W - G * 2
 
-        // Header: row 1, full width
-        gridBox(q('.ft-hdr'), 1, 1, 12, 1,
+        // ── Vertical zone heights ──
+        var hdrH  = cl(Math.round(H * 0.035), 26, 40)
+        var telH  = cl(Math.round(H * 0.028), 20, 32)
+        var barH  = cl(Math.round(H * 0.035), 26, 36)
+
+        var topY   = G
+        var telY   = topY + hdrH + 2
+        var contY  = telY + telH + G          // content area starts here
+        var barY   = H - barH - G             // control bar at bottom
+        var contH  = barY - contY - G         // total content height
+
+        // Split content into zones — speed hero dominant, compact secondary bars
+        var hasGraphs = hasTurbo && scope.showGraphs
+        var mainH, secH, graphH
+        var SEC_MIN = 60, SEC_MAX = 120
+        if (hasGraphs) {
+          secH   = cl(Math.round(contH * 0.10), SEC_MIN, SEC_MAX)
+          graphH = Math.round(contH * 0.32)
+          mainH  = contH - secH - graphH - G * 2
+        } else {
+          secH   = cl(Math.round(contH * 0.12), SEC_MIN, SEC_MAX)
+          mainH  = contH - secH - G
+          graphH = 0
+        }
+
+        var mainY  = contY
+        var secY   = mainY + mainH + G
+        var graphY = secY + secH + G
+
+        // ── Column helper (12-column grid) ──
+        var colW = usableW / 12
+        function cx (c) { return G + (c - 1) * colW }
+        function cw2 (n) { return n * colW - G }
+
+        function box (el, c, n, y, h, extra) {
+          if (!el) return
+          el.style.cssText = 'position:absolute;box-sizing:border-box;left:'+cx(c)+'px;top:'+y+'px;width:'+cw2(n)+'px;height:'+h+'px;overflow:hidden'
+          if (extra) el.style.cssText += ';' + extra
+        }
+
+        // ── Header ──
+        box(q('.ft-hdr'), 1, 12, topY, hdrH,
           'display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.82);border:1px solid rgba(40,46,66,0.5);border-radius:6px;padding:0 14px')
 
-        // Warning bar + Telemetry strip: stacked below header in row 2
-        var hdrH = ch - GAP
-        var subY = GAP + hdrH + 2
-        var subW = W - GAP * 2
-        var subH = Math.round(ch * 0.45)
+        // ── Telemetry strip ──
+        box(q('.ft-telem'), 1, 12, telY, telH,
+          'display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px')
 
+        // ── Warning bar (overlay on top of content) ──
         var warnEl = q('.ft-warn')
         if (warnEl) {
-          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;height:'+subH+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
-          subY += subH + 2
+          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+G+'px;top:'+contY+'px;width:'+usableW+'px;height:'+cl(telH,14,24)+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
         }
 
-        var telemEl = q('.ft-telem')
-        if (telemEl) {
-          telemEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;height:'+subH+'px;overflow:hidden;display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
-          subY += subH + 2
-        }
-
-        // Damage log: below telemetry strip
+        // ── Damage log (overlay below warning) ──
         var dmgEl = q('.ft-dmg')
         if (dmgEl) {
-          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+GAP+'px;top:'+subY+'px;width:'+subW+'px;max-height:'+(subH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(contY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
-        // RPM gauge: rows 2-4, cols 10-12
-        gridBox(q('.ft-c-rpm'), 10, 2, 3, 3)
+        // ── Main gauges zone ──
+        // Left stack: RPM (top 58%) + Speed/Gear (bottom 42%) — cols 1-3
+        var leftCols = hasTurbo ? 3 : 5
+        var rpmH = Math.round(mainH * 0.58)
+        var spdH = mainH - rpmH
 
-        // PSI + TRB: rows 5-7, cols 10-12
-        var rightX = GAP + 9 * cw
-        var bstY = GAP + 4 * ch
-        var bstTotalW = 3 * cw - GAP
-        var bstH = 3 * ch - GAP
-        var bstHalfW = (bstTotalW - GAP) / 2
+        box(q('.ft-c-rpm'), 1, leftCols, mainY, rpmH)
+        box(q('.ft-c-spd'), 1, leftCols, mainY + rpmH, spdH,
+          'display:flex;flex-direction:column;align-items:center;justify-content:center')
 
         if (hasTurbo) {
+          // Boost + Turbo fill the remaining cols (4-12)
           var bstEl = q('.ft-c-bst')
           var trbEl = q('.ft-c-trb')
           if (hasTurboRpm) {
-            // Side by side: PSI left, TRB right
-            if (bstEl) bstEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
-            if (trbEl) trbEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+bstHalfW+GAP)+'px;top:'+bstY+'px;width:'+bstHalfW+'px;height:'+bstH+'px;overflow:hidden'
+            // Boost cols 4-8 (5 cols), Turbo cols 9-12 (4 cols)
+            box(bstEl, 4, 5, mainY, mainH)
+            box(trbEl, 9, 4, mainY, mainH)
           } else {
-            // No turbo RPM (supercharger): PSI full width, hide TRB
-            if (bstEl) bstEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+bstY+'px;width:'+bstTotalW+'px;height:'+bstH+'px;overflow:hidden'
+            // Supercharger: Boost cols 4-8
+            if (bstEl) box(bstEl, 4, 5, mainY, mainH)
             if (trbEl) trbEl.style.display = 'none'
           }
+        } else {
+          var bstEl2 = q('.ft-c-bst'); if (bstEl2) bstEl2.style.display = 'none'
+          var trbEl2 = q('.ft-c-trb'); if (trbEl2) trbEl2.style.display = 'none'
         }
 
-        // OIL & H2O: rows 8-9, cols 10-12
-        var ohY = GAP + 7 * ch
-        var ohTotalW = 3 * cw - GAP
-        var ohH = 2 * ch - GAP
-        var halfW = (ohTotalW - GAP) / 2
+        // ── Secondary row: compact bar gauges + G-Force + Drag timer ──
+        if (hasEgt) {
+          box(q('.ft-c-oil'), 1, 2, secY, secH)
+          box(q('.ft-c-h2o'), 3, 2, secY, secH)
+          box(q('.ft-c-thr'), 5, 2, secY, secH)
+          box(q('.ft-c-egt'), 7, 2, secY, secH)
+        } else {
+          box(q('.ft-c-oil'), 1, 3, secY, secH)
+          box(q('.ft-c-h2o'), 4, 3, secY, secH)
+          box(q('.ft-c-thr'), 7, 2, secY, secH)
+          var egtEl = q('.ft-c-egt'); if (egtEl) egtEl.style.display = 'none'
+        }
+        box(q('.ft-c-gforce'), 9, 2, secY, secH)
+        box(q('.ft-c-drag'), 11, 2, secY, secH,
+          'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
 
-        var oilEl = q('.ft-c-oil')
-        if (oilEl) oilEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+rightX+'px;top:'+ohY+'px;width:'+halfW+'px;height:'+ohH+'px;overflow:hidden'
-
-        var h2oEl = q('.ft-c-h2o')
-        if (h2oEl) h2oEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(rightX+halfW+GAP)+'px;top:'+ohY+'px;width:'+halfW+'px;height:'+ohH+'px;overflow:hidden'
-
-        // G-Force: rows 3-4, cols 1-2 (below telem strip)
-        gridBox(q('.ft-c-gforce'), 1, 3, 2, 2)
-
-        // Drag Timer: rows 5-6, cols 1-2
-        gridBox(q('.ft-c-drag'), 1, 5, 2, 2,
-          'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG.replace('background:', 'background:'))
-
-        // THR: rows 7-8, cols 1-2
-        gridBox(q('.ft-c-thr'), 1, 7, 2, 2)
-        // EGT: rows 7-8, cols 3-4 (if available)
-        if (hasEgt) gridBox(q('.ft-c-egt'), 3, 7, 2, 2)
-
-        // Boost Map & Power graph (turbo only)
-        if (hasTurbo) {
-          gridBox(q('.ft-c-map'), 1, 9, 5, 3, GRAPH_BG)
-          gridBox(q('.ft-c-pwr'), 6, 9, 3, 3, GRAPH_BG)
+        // ── Graphs zone (turbo + showGraphs only) ──
+        if (hasGraphs) {
+          box(q('.ft-c-map'), 1, 6, graphY, graphH, GRAPH_BG)
+          box(q('.ft-c-pwr'), 7, 6, graphY, graphH, GRAPH_BG)
+        } else {
+          var mapEl = q('.ft-c-map'); if (mapEl) mapEl.style.display = 'none'
+          var pwrEl = q('.ft-c-pwr'); if (pwrEl) pwrEl.style.display = 'none'
         }
 
-        // Speed/Gear: rows 10-12, cols 9-12
-        gridBox(q('.ft-c-spd'), 9, 10, 4, 3,
-          'display:flex;flex-direction:column;align-items:center;justify-content:center')
-
-        // Preset buttons: pinned to bottom, thin strip (turbo only)
+        // ── Control bar (always visible) ──
         var barEl = q('.ft-bar')
         if (barEl) {
-          if (hasTurbo) {
-            var barW = 8 * cw - GAP
-            barEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+GAP+'px;bottom:'+GAP+'px;width:'+barW+'px;height:14px;display:flex;gap:3px;align-items:center'
-          } else {
-            barEl.style.display = 'none'
-          }
+          barEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+G+'px;top:'+barY+'px;width:'+usableW+'px;height:'+barH+'px;display:flex;gap:3px;align-items:center'
         }
 
-        // Turbo timer: centered overlay
+        // ── Turbo timer overlay (center of screen) ──
         var ttEl = q('.ft-turbo-timer')
         if (ttEl) {
-          var ttW = 4 * cw, ttH = 2 * ch
-          var ttX = (W - ttW) / 2, ttY = (H - ttH) / 2
-          ttEl.style.cssText = 'position:absolute;z-index:18;left:'+ttX+'px;top:'+ttY+'px;width:'+ttW+'px;height:'+ttH+'px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,12,20,0.85);border:1px solid rgba(255,102,0,0.3);border-radius:10px;pointer-events:none'
+          var ttW = cw2(4), ttH2 = Math.round(mainH * 0.5)
+          ttEl.style.cssText = 'position:absolute;z-index:18;left:'+((W-ttW)/2)+'px;top:'+((H-ttH2)/2)+'px;width:'+ttW+'px;height:'+ttH2+'px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,12,20,0.85);border:1px solid rgba(255,102,0,0.3);border-radius:10px;pointer-events:none'
         }
 
-        // Canvas sizes
-        var gaugeW = 3 * cw - GAP
-        var gaugeH = 3 * ch - GAP
-        var thrW = 2 * cw - GAP
-        var thrH = 2 * ch - GAP
-        var mapW = 5 * cw - GAP
-        var mapH = 3 * ch - GAP
-        var pwrW = 3 * cw - GAP
-        var gfW = 2 * cw - GAP
-        var gfH = 2 * ch - GAP
+        // ── Build lay object for canvas sizing ──
+        var col2W = cw2(2), col3W = cw2(3), col6W = cw2(6)
+        var rpmCanvasW = cw2(leftCols)
 
         lay = {
-          gaugeW: gaugeW, gaugeH: gaugeH,
-          bstW: hasTurboRpm ? bstHalfW : bstTotalW, bstH: bstH,
-          oilW: halfW, oilH: ohH,
-          thrW: thrW, thrH: thrH,
-          graphW: mapW, graphH: mapH,
-          pwrW: pwrW,
-          gfW: gfW, gfH: gfH
+          gaugeW: rpmCanvasW, gaugeH: rpmH,
+          bstW: cw2(5), bstH: mainH,
+          trbW: cw2(4), trbH: mainH,
+          oilW: hasEgt ? col2W : col3W, oilH: secH,
+          h2oW: hasEgt ? col2W : col3W, h2oH: secH,
+          thrW: col2W, thrH: secH,
+          egtW: col2W, egtH: secH,
+          graphW: col6W, graphH: graphH,
+          pwrW: col6W,
+          gfW: col2W, gfH: secH
         }
         return lay
       }
@@ -531,7 +592,7 @@ angular.module('beamng.apps')
           ctx.lineTo(cx+Math.cos(a)*(r+ln/2),cy+Math.sin(a)*(r+ln/2))
           ctx.strokeStyle=mj?'#6a7498':'#3a4258'; ctx.lineWidth=mj?1.5:0.7; ctx.stroke()
           if(mj){var lr=r+aw*3.2,lv=Math.round(maxV/8*i);if(maxV>=1000)lv=(lv/1000).toFixed(0)
-            var fs=Math.max(Math.min(r*0.13,11),6)
+            var fs=Math.max(Math.min(r*0.13,13),10)
             ctx.font=fs.toFixed(0)+'px Consolas,monospace';ctx.fillStyle='#a0a8c0'
             ctx.textAlign='center';ctx.textBaseline='middle'
             ctx.fillText(lv.toString(),cx+Math.cos(a)*lr,cy+Math.sin(a)*lr)}
@@ -550,8 +611,8 @@ angular.module('beamng.apps')
         var fS=Math.min(r*0.48,w*0.26)
         ctx.fillStyle='#ffffff';ctx.font='700 '+fS.toFixed(0)+'px Consolas,monospace'
         ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(valTxt,cx,cy-fS*0.05)
-        ctx.fillStyle='#b0b8d0';ctx.font=Math.max(r*0.14,7).toFixed(0)+'px Consolas,monospace';ctx.fillText(unit,cx,cy+fS*0.55)
-        ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(r*0.11,6).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(r*0.08,4))
+        ctx.fillStyle='#b0b8d0';ctx.font=Math.max(r*0.14,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(unit,cx,cy+fS*0.55)
+        ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(r*0.11,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(r*0.1,6))
       }
 
       /* ==================== MINI GAUGE (OIL/H2O/THR/TRB/EGT) ==================== */
@@ -579,10 +640,59 @@ angular.module('beamng.apps')
         }
 
         var fS=Math.min(r*0.55,w*0.25)
-        ctx.fillStyle='#ffffff';ctx.font='700 '+Math.max(fS,9).toFixed(0)+'px Consolas,monospace'
+        ctx.fillStyle='#ffffff';ctx.font='700 '+Math.max(fS,12).toFixed(0)+'px Consolas,monospace'
         ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(valTxt,cx,cy)
-        ctx.fillStyle='#b0b8d0';ctx.font=Math.max(fS*0.55,7).toFixed(0)+'px Consolas,monospace';ctx.fillText(unit,cx,cy+fS*0.7)
-        ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(fS*0.5,6).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(fS*0.25,3))
+        ctx.fillStyle='#b0b8d0';ctx.font=Math.max(fS*0.55,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(unit,cx,cy+fS*0.7)
+        ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(fS*0.5,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(fS*0.3,6))
+      }
+
+      /* ==================== BAR GAUGE (compact horizontal — OIL/H2O/THR/EGT) ==================== */
+      function drawBarGauge (ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
+        ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h)
+        var pad = Math.max(w * 0.04, 6)
+        var labelFs = cl(h * 0.20, 10, 14)
+        var valFs = cl(h * 0.36, 13, 26)
+        var unitFs = cl(valFs * 0.5, 10, 14)
+        var barH2 = cl(h * 0.12, 3, 8)
+        var pct = cl(value / maxV, 0, 1)
+
+        // Semi-transparent panel background
+        ctx.fillStyle = 'rgba(10,12,20,0.5)'
+        ctx.fillRect(0, 0, w, h)
+        ctx.strokeStyle = 'rgba(40,46,66,0.3)'; ctx.lineWidth = 1
+        ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
+
+        // Label (top-left)
+        ctx.font = '700 ' + labelFs.toFixed(0) + 'px Consolas,monospace'
+        ctx.fillStyle = '#6a7498'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+        ctx.fillText(label, pad, pad)
+
+        // Value (center)
+        ctx.font = '700 ' + valFs.toFixed(0) + 'px Consolas,monospace'
+        ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(valTxt, w / 2, h * 0.45)
+
+        // Unit (below value)
+        ctx.font = unitFs.toFixed(0) + 'px Consolas,monospace'
+        ctx.fillStyle = '#8890a8'
+        ctx.fillText(unit, w / 2, h * 0.45 + valFs * 0.55)
+
+        // Horizontal bar (bottom)
+        var barY2 = h - pad - barH2
+        var barX = pad, barW = w - pad * 2
+
+        ctx.fillStyle = 'rgba(30,34,50,0.6)'
+        ctx.fillRect(barX, barY2, barW, barH2)
+
+        if (pct > 0.005) {
+          var fillW = barW * pct
+          var ac = pct < 0.6 ? c1 : pct < 0.85 ? c2 : '#ff2244'
+          ctx.fillStyle = ac
+          ctx.fillRect(barX, barY2, fillW, barH2)
+          ctx.shadowColor = ac; ctx.shadowBlur = barH2 * 3
+          ctx.fillRect(barX + fillW - 2, barY2, 2, barH2)
+          ctx.shadowBlur = 0
+        }
       }
 
       function drawRpmGauge () {
@@ -594,29 +704,29 @@ angular.module('beamng.apps')
         initCanvases(); if(!ctxBst||!lay) return
         var sz=sizeCvs(cvsBst,lay.bstW,lay.bstH); if(!sz) return
         var bstMax = boostMax > 0 ? Math.ceil(boostMax * 1.2) : maxPSI
-        drawMiniGauge(ctxBst,sz.w,sz.h,Math.max(boost,0),bstMax,boost.toFixed(1),'PSI','BOOST','#00bbff','#ff7700')
+        drawGauge(ctxBst,sz.w,sz.h,Math.max(boost,0),bstMax,boost.toFixed(1),'PSI','BOOST','#00bbff','#ff7700',0.85)
       }
       function drawTurboRpmGauge () {
         initCanvases(); if(!ctxTrb||!lay) return
-        var sz=sizeCvs(cvsTrb,lay.bstW,lay.bstH); if(!sz) return
+        var sz=sizeCvs(cvsTrb,lay.trbW,lay.trbH); if(!sz) return
         var tv=turboRpm>1000?(turboRpm/1000).toFixed(1)+'k':Math.round(turboRpm).toString()
-        drawMiniGauge(ctxTrb,sz.w,sz.h,turboRpm,200000,tv,'rpm','TURBO','#224466','#00bbff')
+        drawGauge(ctxTrb,sz.w,sz.h,turboRpm,200000,tv,'RPM','TURBO','#224466','#00bbff')
       }
 
       /* OIL & H2O */
       function drawOilH2oGauges () {
         initCanvases(); if(!lay) return
         var ms
-        if(ctxOil){ms=sizeCvs(cvsOil,lay.oilW,lay.oilH);if(ms) drawMiniGauge(ctxOil,ms.w,ms.h,oilT,150,Math.round(oilT).toString(),'°C','OIL','#00aa44','#ff8800')}
-        if(ctxH2o){ms=sizeCvs(cvsH2o,lay.oilW,lay.oilH);if(ms) drawMiniGauge(ctxH2o,ms.w,ms.h,h2oT,130,Math.round(h2oT).toString(),'°C','H2O','#0077ee','#ff3344')}
+        if(ctxOil){ms=sizeCvs(cvsOil,lay.oilW,lay.oilH);if(ms) drawBarGauge(ctxOil,ms.w,ms.h,oilT,150,Math.round(oilT).toString(),'°C','OIL','#00aa44','#ff8800')}
+        if(ctxH2o){ms=sizeCvs(cvsH2o,lay.h2oW,lay.h2oH);if(ms) drawBarGauge(ctxH2o,ms.w,ms.h,h2oT,130,Math.round(h2oT).toString(),'°C','H2O','#0077ee','#ff3344')}
       }
 
       /* THR & EGT */
       function drawThrTrbGauges () {
         initCanvases(); if(!lay) return
         var ms
-        if(ctxThr){ms=sizeCvs(cvsThr,lay.thrW,lay.thrH);if(ms) drawMiniGauge(ctxThr,ms.w,ms.h,throttle*100,100,Math.round(throttle*100).toString(),'%','THR','#225533','#00ff88')}
-        if(hasEgt&&ctxEgt){ms=sizeCvs(cvsEgt,lay.thrW,lay.thrH);if(ms) drawMiniGauge(ctxEgt,ms.w,ms.h,egt,1000,Math.round(egt).toString(),'°C','EGT','#884400','#ff4400')}
+        if(ctxThr){ms=sizeCvs(cvsThr,lay.thrW,lay.thrH);if(ms) drawBarGauge(ctxThr,ms.w,ms.h,throttle*100,100,Math.round(throttle*100).toString(),'%','THR','#225533','#00ff88')}
+        if(hasEgt&&ctxEgt){ms=sizeCvs(cvsEgt,lay.egtW,lay.egtH);if(ms) drawBarGauge(ctxEgt,ms.w,ms.h,egt,1000,Math.round(egt).toString(),'°C','EGT','#884400','#ff4400')}
       }
 
       /* ==================== G-FORCE METER ==================== */
@@ -626,10 +736,22 @@ angular.module('beamng.apps')
         var w = sz.w, h = sz.h, ctx = ctxGf
         ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h)
 
-        var fs = cl(Math.min(w,h)*0.1, 7, 11)
+        var fs = cl(Math.min(w,h)*0.12, 10, 16)
         var cx = w/2, cy = h/2 - fs*0.6
         var r = Math.min(w,h)*0.4
         var maxG = 2.0
+
+        // Semi-transparent panel background
+        ctx.fillStyle = 'rgba(10,12,20,0.5)'
+        ctx.fillRect(0, 0, w, h)
+        ctx.strokeStyle = 'rgba(40,46,66,0.3)'; ctx.lineWidth = 1
+        ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
+
+        // Label
+        var lfs = cl(fs * 0.7, 10, 12)
+        ctx.font = '700 ' + lfs.toFixed(0) + 'px Consolas,monospace'
+        ctx.fillStyle = '#6a7498'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+        ctx.fillText('G-FORCE', 6, 4)
 
         // Circle + crosshairs + 1G ring
         ctx.strokeStyle='#2a3048'; ctx.lineWidth=0.5
@@ -642,7 +764,7 @@ angular.module('beamng.apps')
         var gy = cl(-gForceY/maxG, -1, 1) * r
         var gMag = Math.sqrt(gForceX*gForceX + gForceY*gForceY)
         var dotC = gMag < 0.5 ? '#00ff88' : gMag < 1.2 ? '#ffcc00' : '#ff2244'
-        var dotR = cl(r*0.07, 2, 6)
+        var dotR = cl(r*0.09, 3, 8)
         ctx.shadowColor = dotC; ctx.shadowBlur = dotR*3
         ctx.beginPath(); ctx.arc(cx+gx, cy+gy, dotR, 0, 6.283); ctx.fillStyle = dotC; ctx.fill()
         ctx.shadowBlur = 0
@@ -654,7 +776,7 @@ angular.module('beamng.apps')
 
       /* ==================== GRID HELPER ==================== */
       function drawGrid (ctx,w,h,maxX,maxY,extraRight) {
-        var fs=cl(w*0.025,7,12),pl=Math.round(fs*3.2)
+        var fs=cl(w*0.03,10,16),pl=Math.round(fs*3.2)
         var pr = extraRight ? Math.round(fs*2.8) : 6
         var p={l:pl,r:pr,t:6,b:Math.round(fs*1.8)},gw=w-p.l-p.r,gh=h-p.t-p.b
         var nY=h>100?4:2,nX=w>200?4:2
@@ -700,7 +822,7 @@ angular.module('beamng.apps')
           ctx.beginPath();ctx.arc(bx,by,dr+1,0,6.283);ctx.strokeStyle=hot?'#ff8833':'rgba(255,102,0,0.3)';ctx.lineWidth=1;ctx.stroke()
           ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle=hot?'#ff8833':'#ff6600';ctx.fill()
           ctx.beginPath();ctx.arc(bx,by,dr*0.3,0,6.283);ctx.fillStyle='rgba(6,8,14,0.9)';ctx.fill()
-          if(hot){ctx.font='bold '+cl(g.fs+1,8,12).toFixed(0)+'px Consolas,monospace';ctx.fillStyle='#dde0ec';ctx.textAlign='center'
+          if(hot){ctx.font='bold '+cl(g.fs+1,10,14).toFixed(0)+'px Consolas,monospace';ctx.fillStyle='#dde0ec';ctx.textAlign='center'
             ctx.fillText(map[i][0]+' / '+map[i][1].toFixed(1)+' PSI',bx,by-dr-6)}
         }
 
@@ -717,17 +839,66 @@ angular.module('beamng.apps')
 
       /* ==================== POWER / TORQUE ==================== */
       function drawPower () {
-        initCanvases(); if(!ctxPwr||!pwrData||!lay) return
+        initCanvases(); if(!ctxPwr||!lay) return
+        // Need either BeamNG native curves OR our fallback pwrData
+        if (!stockTorqueArr && !pwrData) return
         var sz=sizeCvs(cvsPwr,lay.pwrW,lay.graphH); if(!sz) return
         var w=sz.w,h=sz.h,ctx=ctxPwr
-        var maxNm=0,maxHP=0,eR=pwrData.maxRPM||7000
-        var td=pwrData.torque||[],pd=pwrData.power||[],bt=pwrData.baseTorque||[],bp=pwrData.basePower||[]
+
+        var eR = stockMaxRPM || (pwrData && pwrData.maxRPM) || 7000
+        var useNative = !!(stockTorqueArr && stockTorqueArr.length > 100)
+
+        // Build stock and projected curve data points from native BeamNG data
+        var td=[], pd=[], bt=[], bp=[]
+        var maxNm=0, maxHP=0
+        var stockPkNm=0, stockPkHP=0, projPkNm=0, projPkHP=0
+
+        if (useNative) {
+          var step = 250
+          var refBoost = boostMax > 0 ? boostMax : 1
+          for (var r = 0; r <= eR; r += step) {
+            var idx = Math.min(r, stockTorqueArr.length - 1)
+            var sNm = stockTorqueArr[idx] || 0       // stock torque in Nm
+            var sPkw = stockPowerArr ? (stockPowerArr[idx] || 0) : (sNm * r * 0.10471975 / 1000)
+            var sHP = sPkw * 1.34102
+
+            // Stock curves
+            bt.push({rpm: r, nm: sNm})
+            bp.push({rpm: r, hp: sHP})
+            if (sNm > stockPkNm) stockPkNm = sNm
+            if (sHP > stockPkHP) stockPkHP = sHP
+
+            // Projected curves: scale stock by our boost target / stock boost
+            var ourTarget = lerpMap(r)
+            var boostRatio = refBoost > 0 ? ourTarget / refBoost : 1
+            if (boostRatio < 0) boostRatio = 0
+            var pNm = sNm * boostRatio
+            var pHP = sHP * boostRatio
+
+            td.push({rpm: r, nm: pNm})
+            pd.push({rpm: r, hp: pHP})
+            if (pNm > projPkNm) projPkNm = pNm
+            if (pHP > projPkHP) projPkHP = pHP
+
+            if (sNm > maxNm) maxNm = sNm
+            if (pNm > maxNm) maxNm = pNm
+            if (sHP > maxHP) maxHP = sHP
+            if (pHP > maxHP) maxHP = pHP
+          }
+        } else if (pwrData) {
+          // Fallback to our Lua-calculated curves
+          td=pwrData.torque||[]; pd=pwrData.power||[]; bt=pwrData.baseTorque||[]; bp=pwrData.basePower||[]
+          stockPkNm = pwrData.stockPeakTorque || 0
+          stockPkHP = pwrData.stockPeakPowerHP || 0
+          projPkNm = pwrData.projPeakTorque || 0
+          projPkHP = pwrData.projPeakHP || 0
+          for(var i=0;i<td.length;i++){if(td[i].nm>maxNm)maxNm=td[i].nm;if(i<pd.length&&pd[i].hp>maxHP)maxHP=pd[i].hp}
+          for(var i=0;i<bt.length;i++){if(bt[i].nm>maxNm)maxNm=bt[i].nm;if(i<bp.length&&bp[i].hp>maxHP)maxHP=bp[i].hp}
+        }
+
         if(!td.length||!pd.length) return
 
-        for(var i=0;i<td.length;i++){if(td[i].nm>maxNm)maxNm=td[i].nm;if(i<pd.length&&pd[i].hp>maxHP)maxHP=pd[i].hp}
-        for(var i=0;i<bt.length;i++){if(bt[i].nm>maxNm)maxNm=bt[i].nm;if(i<bp.length&&bp[i].hp>maxHP)maxHP=bp[i].hp}
-
-        var tqRating = pwrData.maxTorqueRating || -1
+        var tqRating = (pwrData && pwrData.maxTorqueRating) || -1
         if (tqRating > 0 && tqRating > maxNm) maxNm = tqRating * 1.05
 
         maxNm=Math.ceil(maxNm/50)*50||400;maxHP=Math.ceil(maxHP/25)*25||200
@@ -737,6 +908,7 @@ angular.module('beamng.apps')
         function tty(nm){return gp.t+ggh-cl(nm/maxNm,0,1)*ggh}
         function pty(hp){return gp.t+ggh-cl(hp/maxHP,0,1)*ggh}
 
+        // Torque limit line
         if (tqRating > 0) {
           var limY = tty(tqRating)
           ctx.save()
@@ -746,23 +918,24 @@ angular.module('beamng.apps')
           ctx.beginPath(); ctx.moveTo(gp.l, limY); ctx.lineTo(gp.l+ggw, limY)
           ctx.strokeStyle = 'rgba(255,34,68,0.5)'; ctx.lineWidth = 1.2; ctx.stroke()
           ctx.restore()
-          ctx.font = cl(g.fs-1,7,10).toFixed(0)+'px Consolas,monospace'
+          ctx.font = cl(g.fs,10,13).toFixed(0)+'px Consolas,monospace'
           ctx.fillStyle = 'rgba(255,34,68,0.6)'; ctx.textAlign = 'right'
           ctx.fillText('MAX '+tqRating+' Nm', gp.l+ggw-3, limY-3)
         }
 
-        var stockPkTq = pwrData.stockPeakTorque || 0
-        if (stockPkTq > 0) {
-          var spY = tty(stockPkTq)
+        // Stock peak torque line
+        if (stockPkNm > 0) {
+          var spY = tty(stockPkNm)
           ctx.save(); ctx.setLineDash([3,5])
           ctx.beginPath(); ctx.moveTo(gp.l, spY); ctx.lineTo(gp.l+ggw, spY)
           ctx.strokeStyle = 'rgba(255,160,60,0.25)'; ctx.lineWidth = 0.8; ctx.stroke()
           ctx.restore()
-          ctx.font = cl(g.fs-2,6,9).toFixed(0)+'px Consolas,monospace'
+          ctx.font = cl(g.fs-1,10,12).toFixed(0)+'px Consolas,monospace'
           ctx.fillStyle = 'rgba(255,160,60,0.4)'; ctx.textAlign = 'left'
-          ctx.fillText('STOCK '+stockPkTq+' Nm', gp.l+3, spY-2)
+          ctx.fillText('STOCK '+Math.round(stockPkNm)+' Nm', gp.l+3, spY-2)
         }
 
+        // Draw curves: stock (dashed), projected (solid)
         var lw2=cl(w*0.004,1,2)
         function dc(data,yF,key,col,dash){ctx.save();if(dash)ctx.setLineDash([4,3]);ctx.beginPath()
           for(var i=0;i<data.length;i++){var px=ttx(data[i].rpm),py=yF(data[i][key]);if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py)}
@@ -770,17 +943,17 @@ angular.module('beamng.apps')
         dc(bt,tty,'nm','rgba(255,100,100,0.15)',true);dc(bp,pty,'hp','rgba(100,150,255,0.15)',true)
         dc(td,tty,'nm','#ff6666',false);dc(pd,pty,'hp','#6699ff',false)
 
-        var lx=gp.l+6,ly=gp.t+8,lfs=cl(g.fs-1,7,10).toFixed(0)
+        // Legend
+        var lx=gp.l+8,ly=gp.t+10,lfs=cl(g.fs,10,14).toFixed(0)
         ctx.font=lfs+'px Consolas,monospace'; ctx.textAlign='left'
-        var projPkTq = pwrData.projPeakTorque || 0
-        var projPkHP = pwrData.projPeakHP || 0
-        ctx.fillStyle='#ff6666'; ctx.fillRect(lx,ly-4,7,2)
-        ctx.fillText('TQ Nm'+(projPkTq>0?' ('+projPkTq+')':''),lx+10,ly)
-        ctx.fillStyle='#6699ff'; ctx.fillRect(lx,ly+8,7,2)
-        ctx.fillText('HP'+(projPkHP>0?' ('+projPkHP+')':''),lx+10,ly+12)
+        ctx.fillStyle='#ff6666'; ctx.fillRect(lx,ly-5,9,3)
+        ctx.fillText('TQ Nm'+(projPkNm>0?' ('+Math.round(projPkNm)+')':''),lx+14,ly)
+        ctx.fillStyle='#6699ff'; ctx.fillRect(lx,ly+parseInt(lfs)+2,9,3)
+        ctx.fillText('HP'+(projPkHP>0?' ('+Math.round(projPkHP)+')':''),lx+14,ly+parseInt(lfs)+6)
         ctx.fillStyle='#6a7498'
-        ctx.fillText('-- stock',lx+10,ly+24)
+        ctx.fillText('-- stock',lx+14,ly+parseInt(lfs)*2+10)
 
+        // Over-limit shading
         if (tqRating > 0) {
           for(var i=0;i<td.length;i++){
             if(td[i].nm > tqRating){
@@ -791,49 +964,62 @@ angular.module('beamng.apps')
           }
         }
 
+        // Right axis labels (HP)
         ctx.textAlign='left'; ctx.fillStyle='#5a6280'
         var nY = h > 100 ? 4 : 2
         for(var i=0;i<=nY;i++){ctx.fillText((maxHP-maxHP/nY*i).toFixed(0),w-gp.r+3,gp.t+ggh/nY*i+g.fs*0.35)}
 
-        if(scope.active&&rpm>50){var rx=ttx(rpm)
+        // Live RPM indicator + power/torque dots
+        if(rpm>50){var rx=ttx(rpm)
           var vg2=ctx.createLinearGradient(0,gp.t,0,gp.t+ggh)
           vg2.addColorStop(0,'rgba(0,255,136,0)');vg2.addColorStop(0.5,'rgba(0,255,136,0.04)');vg2.addColorStop(1,'rgba(0,255,136,0)')
           ctx.fillStyle=vg2;ctx.fillRect(rx-0.5,gp.t,1,ggh)
 
-          // Live power/torque — use BASE (stock) curve scaled by actual boost ratio and load
-          var baseNm=0,baseHP=0
-          for(var li=0;li<bt.length-1;li++){
-            if(rpm>=bt[li].rpm&&rpm<=bt[li+1].rpm){
-              var lt=(rpm-bt[li].rpm)/(bt[li+1].rpm-bt[li].rpm)
-              baseNm=bt[li].nm+(bt[li+1].nm-bt[li].nm)*lt
-              baseHP=bp[li].hp+(bp[li+1].hp-bp[li].hp)*lt
-              break
+          // Live power/torque: interpolate stock curve at current RPM, scale by actual boost
+          var liveNm=0, liveHP=0
+          if (useNative && stockTorqueArr) {
+            var rpmIdx = Math.floor(rpm)
+            if (rpmIdx >= 0 && rpmIdx < stockTorqueArr.length) {
+              var sNmLive = stockTorqueArr[rpmIdx] || 0
+              var sPkwLive = stockPowerArr ? (stockPowerArr[rpmIdx] || 0) : (sNmLive * rpm * 0.10471975 / 1000)
+              // Scale by actual boost ratio and engine load
+              // Stock curve already includes stock boost, so ratio = actual / stock
+              var refB = boostMax > 0 ? boostMax : 1
+              var liveRatio = boost > 0 ? (boost / refB) : 1
+              liveNm = sNmLive * liveRatio * Math.max(engineLoad, 0.01)
+              liveHP = sPkwLive * 1.34102 * liveRatio * Math.max(engineLoad, 0.01)
+            }
+          } else {
+            // Fallback: interpolate from bt/bp arrays
+            for(var li=0;li<bt.length-1;li++){
+              if(rpm>=bt[li].rpm&&rpm<=bt[li+1].rpm){
+                var lt=(rpm-bt[li].rpm)/(bt[li+1].rpm-bt[li].rpm)
+                var bNm=bt[li].nm+(bt[li+1].nm-bt[li].nm)*lt
+                var bHP=bp[li].hp+(bp[li+1].hp-bp[li].hp)*lt
+                var bRef = boostMax > 0 ? boostMax : 1
+                var aRatio = boost > 0 ? boost / bRef : 1
+                liveNm=bNm*aRatio*Math.max(engineLoad,0.01)
+                liveHP=bHP*aRatio*Math.max(engineLoad,0.01)
+                break
+              }
             }
           }
-          // Scale by actual boost ratio (actual/stock) and engine load
-          var bMaxRef = boostMax > 0 ? boostMax : 1
-          var actualRatio = boost > 0 ? boost / bMaxRef : (boost > -5 ? 1 : 0.5)
-          var liveNm=baseNm*actualRatio*engineLoad
-          var liveHP=baseHP*actualRatio*engineLoad
 
           var dotR2=cl(w*0.008,3,6)
-          // Torque dot (red)
           if(liveNm>0){
             var tDotY=tty(liveNm)
             ctx.shadowColor='#ff6666';ctx.shadowBlur=dotR2*3
             ctx.beginPath();ctx.arc(rx,tDotY,dotR2,0,6.283);ctx.fillStyle='#ff6666';ctx.fill()
             ctx.shadowBlur=0
           }
-          // Power dot (blue)
           if(liveHP>0){
             var pDotY=pty(liveHP)
             ctx.shadowColor='#6699ff';ctx.shadowBlur=dotR2*3
             ctx.beginPath();ctx.arc(rx,pDotY,dotR2,0,6.283);ctx.fillStyle='#6699ff';ctx.fill()
             ctx.shadowBlur=0
           }
-          // Live readout text
-          var lfx=gp.l+ggw-4, lfy=gp.t+ggh-4
-          ctx.font='700 '+cl(g.fs,7,11).toFixed(0)+'px Consolas,monospace'
+          var lfx=gp.l+ggw-4, lfy=gp.t+ggh-6
+          ctx.font='700 '+cl(g.fs,10,16).toFixed(0)+'px Consolas,monospace'
           ctx.textAlign='right'; ctx.fillStyle='#ff6666'
           ctx.fillText(Math.round(liveNm)+' Nm',lfx,lfy-g.fs*1.1)
           ctx.fillStyle='#6699ff'
@@ -896,13 +1082,9 @@ angular.module('beamng.apps')
       }, 200)
 
       function drawAll () {
-        drawRpmGauge(); drawOilH2oGauges(); drawGForce()
+        drawRpmGauge(); drawOilH2oGauges(); drawThrTrbGauges(); drawGForce()
         if (hasTurbo) { drawBoostGauge(); if (hasTurboRpm) drawTurboRpmGauge() }
-        if (scope.showGraphs) {
-          drawThrTrbGauges()
-          if (hasTurbo) { drawBoostMap(); drawPower() }
-        }
-        applyGraphVisibility()
+        if (hasTurbo && scope.showGraphs) { drawBoostMap(); drawPower() }
       }
 
       /* ==================== WARNINGS ==================== */
@@ -914,6 +1096,9 @@ angular.module('beamng.apps')
         if (oilT > 130) w.push('OIL TEMP ' + Math.round(oilT) + '°C')
         if (h2oT > 110) w.push('COOLANT ' + Math.round(h2oT) + '°C')
         if (scope.overboost && !safetyCut) w.push('OVERBOOST')
+        if (scope.alsFiring) w.push('ALS ACTIVE')
+        if (scope.tcsCut > 0.05) w.push('TC -' + Math.round(scope.tcsCut * 100) + '%')
+        if (scope.absInterfering) w.push('ABS')
         if (egt > 850) w.push('EGT ' + Math.round(egt) + '°C')
         scope.warnings = w
       }
@@ -956,30 +1141,47 @@ angular.module('beamng.apps')
       }
 
       /* ==================== TURBO TIMER ==================== */
+      // Turbo cooldown timer: after hard boost driving, when you come to idle,
+      // shows a countdown recommending you let the engine idle before shutdown.
+      // This protects the turbo bearings from oil coking.
+      var turboHotThreshold = 800  // EGT °C — turbo was working hard
+      var turboWasHot = false
+      var turboHotPeakEgt = 0
+
       function updateTurboTimer () {
-        var turboRunning = turboRpm > 5000
-        if (turboRunning) {
-          turboWasRunning = true
-          lastTurboRpm = turboRpm
+        // Track when turbo was under hard load (high EGT or high boost + RPM)
+        var isHardDriving = (egt > turboHotThreshold) || (boost > 10 && rpm > 4000)
+        if (isHardDriving) {
+          turboWasHot = true
+          if (egt > turboHotPeakEgt) turboHotPeakEgt = egt
         }
-        // Engine off but turbo was spinning fast
-        if (turboWasRunning && rpm < 100 && lastTurboRpm > 10000) {
+
+        // Trigger: was hot, now idling (low RPM, low throttle, low speed)
+        var isIdling = rpm > 300 && rpm < 1200 && throttle < 0.05 && speed < 5
+
+        if (turboWasHot && isIdling) {
           if (!scope.turboTimerActive) {
             scope.turboTimerActive = true
             turboTimerStart = Date.now()
-            turboTimerDuration = cl(lastTurboRpm / 10000, 10, 60)
+            // Duration scales with how hot the turbo was: 30s base, up to 90s
+            turboTimerDuration = cl(turboHotPeakEgt / 15, 30, 90)
           }
           var elapsed = (Date.now() - turboTimerStart) / 1000
           var remaining = Math.max(0, turboTimerDuration - elapsed)
-          scope.turboTimerStr = remaining.toFixed(1)
+          scope.turboTimerStr = remaining.toFixed(0)
           if (remaining <= 0) {
             scope.turboTimerActive = false
-            turboWasRunning = false
+            turboWasHot = false
+            turboHotPeakEgt = 0
           }
-        } else if (rpm > 500) {
-          // Engine running again, cancel timer
+        } else if (rpm > 2000 || speed > 20) {
+          // Driving again — cancel timer, reset if turbo cooled down
           scope.turboTimerActive = false
-          if (turboRpm < 1000) turboWasRunning = false
+          turboTimerStart = 0
+          if (egt < 400 && boost < 3) {
+            turboWasHot = false
+            turboHotPeakEgt = 0
+          }
         }
       }
 
@@ -1024,8 +1226,25 @@ angular.module('beamng.apps')
             for (var dmi = 0; dmi < scope.dmodes.length; dmi++) {
               var dm = scope.dmodes[dmi]
               var ev = s.electrics[dm.electricsKey]
-              if (ev !== undefined) dm.active = !!ev
+              if (ev !== undefined) {
+                dm.active = !!ev
+              }
             }
+            // Custom TCS cut amount (0 = no cut, >0 = intervening)
+            scope.tcsCut = s.electrics.fueltech_tcs_cut || 0
+            // Sync TC state from electrics (with debounce after toggle)
+            if (tcToggleDebounce > 0) { tcToggleDebounce-- }
+            else { scope.tcsActive = !!(s.electrics.tcs) }
+
+            // Anti-lag system state (with debounce after toggle)
+            if (alsToggleDebounce > 0) { alsToggleDebounce-- }
+            else { scope.alsActive = !!(s.electrics.fueltech_als_enabled) }
+            scope.alsFiring = !!(s.electrics.fueltech_als_firing)
+
+            // ABS state (with debounce after toggle)
+            if (absToggleDebounce > 0) { absToggleDebounce-- }
+            else { scope.absActive = !!(s.electrics.abs) }
+            scope.absInterfering = !!(s.electrics.absActive)
           }
 
           // Feature detection — detect forced induction (turbo or supercharger) and EGT

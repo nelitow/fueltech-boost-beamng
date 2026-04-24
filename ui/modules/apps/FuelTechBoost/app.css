@@ -40,7 +40,7 @@
 .ft-peak:hover { color: #c0c8e0; }
 
 .ft-toggle {
-  font-size: 9px;
+  font-size: 10px;
   color: #667088;
   cursor: pointer;
   letter-spacing: 1px;
@@ -57,7 +57,7 @@
 .ft-dot.off { background: #662200; }
 
 .ft-hdr-state {
-  font-size: 9px;
+  font-size: 10px;
   color: #667088;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -80,26 +80,26 @@
 }
 
 .ft-spd {
-  font-size: 48px;
+  font-size: 56px;
   font-weight: 700;
   color: #fff;
   line-height: 1;
 }
 
 .ft-spd-u {
-  font-size: 10px;
+  font-size: 12px;
   color: #6a7498;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
 }
 
 .ft-gear-l {
-  font-size: 8px;
+  font-size: 10px;
   color: #6a7498;
   letter-spacing: 2px;
 }
 
 .ft-gear-v {
-  font-size: 36px;
+  font-size: 38px;
   font-weight: 700;
   color: #00ff88;
   line-height: 1;
@@ -125,8 +125,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 12px;
-  font-size: 7px;
+  height: 28px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 1px;
   background: rgba(10,12,20,0.82);
@@ -165,7 +165,7 @@
 }
 
 .ft-dt-btn {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
   padding: 3px 8px;
@@ -203,7 +203,7 @@
 }
 
 .ft-warn-item {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #ff4466;
   letter-spacing: 1.5px;
@@ -231,7 +231,7 @@
 
 /* Drag timer */
 .ft-drag-title {
-  font-size: 7px;
+  font-size: 10px;
   color: #7880a0;
   letter-spacing: 2px;
   text-align: center;
@@ -246,13 +246,13 @@
 }
 
 .ft-drag-label {
-  font-size: 8px;
+  font-size: 10px;
   color: #8890a8;
   font-weight: 700;
 }
 
 .ft-drag-time {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #c0c8e0;
   font-variant-numeric: tabular-nums;
@@ -264,7 +264,7 @@
 }
 
 .ft-drag-reset {
-  font-size: 7px;
+  font-size: 10px;
   color: #6a7498;
   letter-spacing: 1px;
   text-align: center;
@@ -285,7 +285,7 @@
 }
 
 .ft-turbo-timer-label {
-  font-size: 8px;
+  font-size: 10px;
   color: #ff6600;
   letter-spacing: 2px;
   font-weight: 700;
@@ -310,26 +310,26 @@
 }
 
 .ft-telem-item {
-  font-size: 8px;
+  font-size: 11px;
   color: #667088;
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
 
 .ft-telem-item b {
-  color: #9aa2b8;
-  font-weight: 600;
+  color: #b0b8d0;
+  font-weight: 700;
 }
 
 .ft-telem-cel {
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
   color: #ff6600;
   letter-spacing: 1px;
 }
 
 .ft-telem-fuel {
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
   color: #ff2244;
   letter-spacing: 1px;
@@ -337,7 +337,7 @@
 
 /* Version tag */
 .ft-ver {
-  font-size: 8px;
+  font-size: 10px;
   color: #4a5068;
   letter-spacing: 1px;
   margin-left: 4px;
@@ -355,7 +355,7 @@
 }
 
 .ft-dmg-item {
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -364,6 +364,75 @@
 /* Brake temp values inline */
 .ft-telem-item b {
   margin: 0 2px;
+}
+
+/* ALS button */
+.ft-btn-als {
+  font-weight: 800 !important;
+  letter-spacing: 1px !important;
+}
+.ft-btn-als-on {
+  color: #ff6600 !important;
+  border-color: #ff6600 !important;
+  background: rgba(26,16,8,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,102,0,0.15);
+}
+.ft-btn-als-firing {
+  color: #ff2244 !important;
+  border-color: #ff2244 !important;
+  background: rgba(40,6,10,0.9) !important;
+  box-shadow: 0 0 14px rgba(255,34,68,0.3);
+  animation: ft-pulse 0.15s ease-in-out infinite;
+}
+
+/* TC button */
+.ft-btn-tc {
+  font-weight: 800 !important;
+  letter-spacing: 2px !important;
+}
+.ft-btn-tc-on {
+  color: #00cc55 !important;
+  border-color: #00cc55 !important;
+  background: rgba(0,40,20,0.9) !important;
+  box-shadow: 0 0 10px rgba(0,204,85,0.15);
+}
+.ft-btn-tc-off {
+  color: #ff4466 !important;
+  border-color: #ff4466 !important;
+  background: rgba(40,8,12,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,68,102,0.12);
+}
+.ft-btn-tc-active {
+  color: #ffcc00 !important;
+  border-color: #ffcc00 !important;
+  background: rgba(40,32,0,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,204,0,0.2);
+  animation: ft-pulse 0.3s ease-in-out infinite;
+}
+
+/* ABS button */
+.ft-btn-abs {
+  font-weight: 800 !important;
+  letter-spacing: 2px !important;
+}
+.ft-btn-abs-on {
+  color: #00cc55 !important;
+  border-color: #00cc55 !important;
+  background: rgba(0,40,20,0.9) !important;
+  box-shadow: 0 0 10px rgba(0,204,85,0.15);
+}
+.ft-btn-abs-off {
+  color: #ff4466 !important;
+  border-color: #ff4466 !important;
+  background: rgba(40,8,12,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,68,102,0.12);
+}
+.ft-btn-abs-active {
+  color: #ffcc00 !important;
+  border-color: #ffcc00 !important;
+  background: rgba(40,32,0,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,204,0,0.2);
+  animation: ft-pulse 0.3s ease-in-out infinite;
 }
 
 /* Utility */

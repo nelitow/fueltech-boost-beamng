@@ -1,6 +1,7 @@
 -- FuelTech Drivetrain Controller
 -- Scans powertrain for switchable differentials, range boxes, transfer cases
 -- Also detects ESC, TCS, and drive mode controllers
+-- Includes custom TCS for vehicles without native traction control
 -- Publishes current modes to UI via electrics values
 
 local M = {}
@@ -10,6 +11,20 @@ local features = {}
 local driveModes = {}
 local scanned = false
 local scanTimer = 0
+
+-- Custom TCS state
+local hasNativeTCS = false
+local customTCSEnabled = true     -- user toggle
+local customTCSIntervening = false
+local tcsThrottleMul = 1.0
+
+-- Custom TCS tuning
+local TCS_SLIP_THRESHOLD = 0.10   -- 10% slip triggers intervention
+local TCS_SLIP_FULL_CUT  = 0.35   -- at 35%+ slip, maximum cut applied
+local TCS_MAX_CUT         = 0.85  -- max 85% throttle reduction
+local TCS_CUT_RATE        = 10.0  -- how fast throttle cuts (per second)
+local TCS_RECOVER_RATE    = 3.0   -- how fast throttle recovers (per second)
+local TCS_MIN_SPEED       = 2.0   -- m/s — don't intervene below ~7 km/h
 
 local function getLabel(name, devType)
   local n = string.lower(name or "")
@@ -112,6 +127,7 @@ local function scanDrivetrain()
     {name = "absController", label = "ABS", electricsKey = "abs"},
   }
 
+  hasNativeTCS = false
   for _, cc in ipairs(ctrlChecks) do
     local ok3, ctrl = pcall(controller.getController, cc.name)
     if ok3 and ctrl then
@@ -121,7 +137,21 @@ local function scanDrivetrain()
         electricsKey = cc.electricsKey,
         active = true
       })
+      if cc.name == "tcs" then hasNativeTCS = true end
     end
+  end
+
+  -- If no native TCS, register our custom TCS as a drive mode
+  if not hasNativeTCS then
+    table.insert(driveModes, {
+      name = "tcs",
+      label = "TC",
+      electricsKey = "tcs",
+      active = true,
+      custom = true
+    })
+    customTCSEnabled = true
+    log("I", "fueltechDT", "No native TCS found — custom traction control enabled")
   end
 
   log("I", "fueltechDT", "Drivetrain scan: " .. #features .. " switchable features, " .. #driveModes .. " drive modes")
@@ -152,6 +182,73 @@ local function scanDrivetrain()
   scanned = true
 end
 
+local function updateCustomTCS(dt)
+  if hasNativeTCS or not customTCSEnabled then
+    tcsThrottleMul = 1.0
+    customTCSIntervening = false
+    electrics.values.tcs = hasNativeTCS and (electrics.values.tcs or 0) or 0
+    return
+  end
+
+  electrics.values.tcs = 1  -- report as active
+
+  local vehSpeed = electrics.values.wheelspeed or 0  -- m/s
+
+  -- Don't intervene at very low speed (parking, launch)
+  if vehSpeed < TCS_MIN_SPEED then
+    tcsThrottleMul = math.min(1.0, tcsThrottleMul + TCS_RECOVER_RATE * dt)
+    customTCSIntervening = tcsThrottleMul < 0.99
+    electrics.values.fueltech_tcs_cut = 1.0 - tcsThrottleMul
+    return
+  end
+
+  -- Find maximum slip ratio across driven wheels
+  local maxSlip = 0
+  local wc = wheels and wheels.wheelCount or 0
+  for i = 0, wc - 1 do
+    local w = wheels.wheels[i]
+    if w then
+      -- A wheel is driven if it has propulsion torque applied
+      local isDriven = w.isPropulsed or (w.propulsionTorque and math.abs(w.propulsionTorque) > 1)
+      if isDriven then
+        local wheelGroundSpeed = math.abs((w.angularVelocity or 0) * (w.radius or 0.3))
+        local slip = (wheelGroundSpeed - vehSpeed) / math.max(vehSpeed, 0.5)
+        if slip > maxSlip then maxSlip = slip end
+      end
+    end
+  end
+
+  -- Calculate target throttle multiplier based on slip
+  if maxSlip > TCS_SLIP_THRESHOLD then
+    local slipExcess = (maxSlip - TCS_SLIP_THRESHOLD) / (TCS_SLIP_FULL_CUT - TCS_SLIP_THRESHOLD)
+    slipExcess = math.max(0, math.min(slipExcess, 1.0))
+    local targetMul = 1.0 - slipExcess * TCS_MAX_CUT
+    -- Quickly cut toward target
+    if targetMul < tcsThrottleMul then
+      tcsThrottleMul = math.max(targetMul, tcsThrottleMul - TCS_CUT_RATE * dt)
+    else
+      tcsThrottleMul = math.min(targetMul, tcsThrottleMul + TCS_RECOVER_RATE * dt)
+    end
+    customTCSIntervening = true
+  else
+    -- No slip — recover throttle smoothly
+    tcsThrottleMul = math.min(1.0, tcsThrottleMul + TCS_RECOVER_RATE * dt)
+    customTCSIntervening = tcsThrottleMul < 0.99
+  end
+
+  -- Clamp
+  tcsThrottleMul = math.max(1.0 - TCS_MAX_CUT, math.min(tcsThrottleMul, 1.0))
+
+  -- Apply throttle reduction
+  local currentThrottle = electrics.values.throttle or 0
+  if currentThrottle > 0 and tcsThrottleMul < 1.0 then
+    electrics.values.throttle = currentThrottle * tcsThrottleMul
+  end
+
+  -- Publish cut amount for UI (0 = no cut, 1 = full cut)
+  electrics.values.fueltech_tcs_cut = 1.0 - tcsThrottleMul
+end
+
 local function updateGFX(dt)
   if not scanned then
     scanTimer = scanTimer + dt
@@ -168,6 +265,9 @@ local function updateGFX(dt)
       electrics.values[f.electricsName] = findModeIndex(f.modes, dev.mode)
     end
   end
+
+  -- Custom TCS: monitor wheel slip and reduce throttle
+  updateCustomTCS(dt)
 end
 
 local function toggleFeature(featureName)
@@ -178,6 +278,19 @@ local function toggleFeature(featureName)
 end
 
 local function toggleDriveMode(modeName)
+  -- Handle custom TCS toggle
+  if modeName == "tcs" and not hasNativeTCS then
+    customTCSEnabled = not customTCSEnabled
+    if not customTCSEnabled then
+      tcsThrottleMul = 1.0
+      customTCSIntervening = false
+      electrics.values.tcs = 0
+      electrics.values.fueltech_tcs_cut = 0
+    end
+    log("I", "fueltechDT", "Custom TCS " .. (customTCSEnabled and "enabled" or "disabled"))
+    return
+  end
+
   local ok, ctrl = pcall(controller.getController, modeName)
   if ok and ctrl then
     if ctrl.toggleActive then
@@ -209,11 +322,17 @@ local function init(jbeamData)
   scanTimer = 0
   features = {}
   driveModes = {}
+  hasNativeTCS = false
+  customTCSEnabled = true
+  customTCSIntervening = false
+  tcsThrottleMul = 1.0
 end
 
 local function reset()
   scanned = false
   scanTimer = 0
+  tcsThrottleMul = 1.0
+  customTCSIntervening = false
 end
 
 M.init = init
