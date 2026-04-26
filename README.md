@@ -4,6 +4,8 @@ A full-screen dashboard mod inspired by FuelTech standalone ECUs. Features real-
 
 Works with **turbocharged** and **supercharged** vehicles. On naturally aspirated cars, it works as a universal telemetry HUD (boost features auto-hide).
 
+[![Download Latest](https://img.shields.io/github/v/release/nelitow/fueltech-boost-beamng?label=Download%20Latest&color=ff6600&style=for-the-badge)](https://github.com/nelitow/fueltech-boost-beamng/releases/latest/download/fueltech_boost_controller.zip)
+
 ![BeamNG.drive](https://img.shields.io/badge/BeamNG.drive-0.34+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -15,7 +17,9 @@ Works with **turbocharged** and **supercharged** vehicles. On naturally aspirate
 
 ### 1. Download the mod
 
-Go to the [Releases page](https://github.com/nelitow/fueltech-boost-beamng/releases) and download **`fueltech_boost_controller.zip`** from the latest release.
+**[⬇ Click here to download the latest `fueltech_boost_controller.zip`](https://github.com/nelitow/fueltech-boost-beamng/releases/latest/download/fueltech_boost_controller.zip)**
+
+(That link always serves the most recent release — no need to hunt through the [Releases page](https://github.com/nelitow/fueltech-boost-beamng/releases).)
 
 ### 2. Find your BeamNG mods folder
 
