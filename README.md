@@ -78,7 +78,7 @@ The dashboard will automatically detect your vehicle's features:
 - **RPM gauge** — large circular with redline zone
 - **Boost PSI gauge** — auto-scales to turbo's max, side-by-side with turbo RPM (turbo) or full width (supercharger)
 - **Oil temp / Coolant temp** — with overheat warnings
-- **Throttle / Turbo RPM / EGT** — shown only when available
+- **Throttle / Turbo RPM** — shown only when available
 - **G-Force meter** — lateral + longitudinal dot display
 - **Drag timer** — 0-100 and 0-200 km/h, auto-starts from standstill
 - **Power/torque curves** — projected vs stock with live Nm/HP readout

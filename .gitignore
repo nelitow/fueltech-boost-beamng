@@ -1,0 +1,3 @@
+# Local release zips (built by hand for the BeamNG repo upload —
+# the GitHub release workflow builds a fresh one in CI).
+dist/

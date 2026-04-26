@@ -9,10 +9,9 @@
     <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
     <span class="ft-peak" ng-click="resetPeakRpm()">RPM PK {{peakRpmStr}}</span>
     <span class="ft-hdr-sep">|</span>
-    <span class="ft-toggle" ng-if="hasTurbo" ng-click="toggleGraphs()">{{showGraphs?'HIDE':'SHOW'}} GRAPHS</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-ver">7.0.0</span>
+    <span class="ft-ver">7.1.0</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->
@@ -22,6 +21,7 @@
 
   <!-- Telemetry strip -->
   <div class="ft-telem">
+    <span class="ft-telem-item">WT <b>{{weightStr}}kg</b></span>
     <span class="ft-telem-item">LOAD <b>{{loadStr}}%</b></span>
     <span class="ft-telem-item">FUEL <b>{{fuelStr}}L</b></span>
     <span class="ft-telem-item">EXH <b>{{exhFlowStr}}</b></span>
@@ -71,7 +71,6 @@
   <div class="ft-cell ft-c-oil"><canvas class="ft-cv ft-cv-oil"></canvas></div>
   <div class="ft-cell ft-c-h2o"><canvas class="ft-cv ft-cv-h2o"></canvas></div>
   <div class="ft-cell ft-c-thr"><canvas class="ft-cv ft-cv-thr"></canvas></div>
-  <div class="ft-cell ft-c-egt"><canvas class="ft-cv ft-cv-egt"></canvas></div>
   <div class="ft-cell ft-c-gforce"><canvas class="ft-cv ft-cv-gforce"></canvas></div>
 
   <!-- Drag timer (always visible) -->

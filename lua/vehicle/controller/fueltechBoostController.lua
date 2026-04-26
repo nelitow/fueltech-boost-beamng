@@ -29,8 +29,10 @@ local alsFiring = false        -- currently firing (off-throttle, keeping turbo 
 local ALS_MIN_RPM = 3500       -- don't fire below this RPM
 local ALS_THROTTLE_OPEN = 0.25 -- hold throttle at 25% when ALS fires
 local ALS_WASTEGATE_HOLD = 5   -- wastegate offset to hold during ALS (keeps turbo spinning)
-local ALS_EGT_RISE = 150       -- extra EGT degrees when ALS fires (simulated)
-local alsEgtAdd = 0            -- current simulated EGT addition (smoothed)
+
+-- Vehicle mass cache (recomputed once per second — see updateGFX)
+local cachedMass = 0
+local massUpdateTimer = 0
 
 -- Saved profiles
 local savedProfiles = {}
@@ -148,6 +150,27 @@ local function updateGFX(dt)
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
   electrics.values.fueltech_forceOB = forceOverboost and 1 or 0
 
+  -- Total vehicle mass (kg) — published for the dashboard top bar.
+  -- Cached and refreshed once per second (mass only changes with damage,
+  -- fuel burn, or part swaps — no need for per-frame work).
+  massUpdateTimer = (massUpdateTimer or 0) + dt
+  if cachedMass == 0 or massUpdateTimer > 1.0 then
+    massUpdateTimer = 0
+    local m = 0
+    -- Try the official API first
+    local ok, val = pcall(function() return obj:getTotalMass() end)
+    if ok and type(val) == "number" and val > 0 then
+      m = val
+    elseif v and v.data and v.data.nodes then
+      -- Fallback: sum node weights directly (works on every build)
+      for _, node in pairs(v.data.nodes) do
+        m = m + (node.nodeWeight or 0)
+      end
+    end
+    cachedMass = m
+  end
+  electrics.values.fueltech_mass = cachedMass
+
   -- ── Anti-Lag System (ALS) ──
   -- When enabled and driver lifts off throttle at high RPM:
   -- keep throttle partially open + hold wastegate to maintain turbo spool
@@ -166,28 +189,16 @@ local function updateGFX(dt)
 
       -- Hold wastegate to maintain boost pressure (don't let it dump)
       alsWastagateOverride = ALS_WASTEGATE_HOLD
-
-      -- EGT rise (smooth ramp up — unburned fuel igniting in exhaust)
-      alsEgtAdd = math.min(ALS_EGT_RISE, alsEgtAdd + ALS_EGT_RISE * 3 * dt)
     else
       alsFiring = false
-      -- Smooth EGT cooldown
-      alsEgtAdd = math.max(0, alsEgtAdd - ALS_EGT_RISE * 1.5 * dt)
     end
   else
     alsFiring = false
-    alsEgtAdd = math.max(0, alsEgtAdd - ALS_EGT_RISE * 2 * dt)
   end
 
   -- Publish ALS state
   electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0
   electrics.values.fueltech_als_firing = alsFiring and 1 or 0
-
-  -- Simulate EGT increase from ALS combustion in exhaust manifold
-  if alsEgtAdd > 0 then
-    local curEgt = electrics.values.exhaustTemperature or electrics.values.egt or 0
-    electrics.values.exhaustTemperature = curEgt + alsEgtAdd
-  end
 
   -- Closed-loop PI controller
   if currentRPM > 1500 and targetPSI > 0 then
@@ -310,7 +321,6 @@ local function reset()
   boostOffset = 0
   integralError = 0
   alsFiring = false
-  alsEgtAdd = 0
   if engine and hasFI then
     if fiType == "turbo" and engine.turbocharger and engine.turbocharger.setWastegateOffset then
       engine.turbocharger.setWastegateOffset(0)
@@ -355,7 +365,6 @@ local function toggleAntiLag()
   alsEnabled = not alsEnabled
   if not alsEnabled then
     alsFiring = false
-    alsEgtAdd = 0
     electrics.values.fueltech_als_firing = 0
   end
   electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0

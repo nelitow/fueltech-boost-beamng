@@ -74,17 +74,16 @@ angular.module('beamng.apps')
       var maxRPM = 8000, maxPSI = 40, peakBoost = 0, boostMax = 0
       var peakRPM = 0
       var gForceX = 0, gForceY = 0
-      var egt = 0
       var gear = 0
       var engineLoad = 0, fuelVol = 0, fuelCap = 0, exhFlow = 0
-      var clutchPos = 0, altitude = 0, odometer = 0
+      var clutchPos = 0, altitude = 0, odometer = 0, vehMass = 0
       var cel = false, lowFuel = false
 
       // Feature detection: auto-hide gauges that never receive data
-      var hasTurbo = false, hasEgt = false, hasTurboRpm = false
+      var hasTurbo = false, hasTurboRpm = false
       var detectFrames = 0, detectDone = false
 
-      scope.hasTurbo = false; scope.hasEgt = false
+      scope.hasTurbo = false
       scope.active = false; scope.overboost = false
       scope.rpmStr = '0'; scope.boostStr = '0.0'; scope.tgtStr = '0.0'; scope.peakStr = '0.0'
       scope.peakRpmStr = '0'
@@ -105,6 +104,7 @@ angular.module('beamng.apps')
       scope.alsFiring = false
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
+      scope.weightStr = '0'
       scope.cel = false; scope.lowFuel = false
       scope.brakeTemps = []
       scope.damageLog = []
@@ -207,7 +207,7 @@ angular.module('beamng.apps')
         }
       })
 
-      // Damage tracking
+      // Damage tracking — friendly labels for BeamNG damage keys
       var damageLabels = {
         // Engine
         'engine.oilStarvation': 'OIL STARVE', 'engine.coolantHot': 'COOLANT HOT',
@@ -217,7 +217,20 @@ angular.module('beamng.apps')
         'engine.mildOverrevDamage': 'OVERREV', 'engine.catastrophicOverrevDamage': 'OVERREV CRITICAL',
         'engine.engineDisabled': 'ENGINE DEAD', 'engine.blockMelted': 'BLOCK MELTED',
         'engine.engineLockedUp': 'ENGINE LOCKED', 'engine.radiatorLeak': 'RAD LEAK',
-        'engine.oilpanLeak': 'OIL LEAK', 'engine.engineHydrolocked': 'HYDROLOCKED',
+        'engine.oilpanLeak': 'OIL PAN LEAK', 'engine.engineHydrolocked': 'HYDROLOCKED',
+        'engine.oilRadiatorLeak': 'OIL COOLER LEAK',
+        'engine.fuelLeak': 'FUEL LEAK', 'engine.exhaustLeak': 'EXHAUST LEAK',
+        'engine.transmissionDamage': 'TRANS DMG',
+        // Body panels (FL/FR/ML/MR/RL/RR — front/mid/rear, left/right)
+        'body.FL': 'BODY FRONT-L', 'body.FR': 'BODY FRONT-R',
+        'body.ML': 'BODY MID-L',   'body.MR': 'BODY MID-R',
+        'body.RL': 'BODY REAR-L',  'body.RR': 'BODY REAR-R',
+        'body.F':  'BODY FRONT',   'body.R':  'BODY REAR',
+        'body.M':  'BODY MID',     'body.L':  'BODY LEFT',
+        'body.RT': 'BODY RIGHT',
+        'body.hood': 'HOOD', 'body.trunk': 'TRUNK', 'body.roof': 'ROOF',
+        'body.windshield': 'WINDSHIELD', 'body.bumperF': 'FRONT BUMPER',
+        'body.bumperR': 'REAR BUMPER',
         // Wheels
         'wheels.brakeOverHeatFL': 'BRK OVERHEAT FL', 'wheels.brakeOverHeatFR': 'BRK OVERHEAT FR',
         'wheels.brakeOverHeatRL': 'BRK OVERHEAT RL', 'wheels.brakeOverHeatRR': 'BRK OVERHEAT RR',
@@ -227,8 +240,20 @@ angular.module('beamng.apps')
         'wheels.brakeRL': 'BRK DMG RL', 'wheels.brakeRR': 'BRK DMG RR',
         // Powertrain
         'powertrain.mainEngine': 'ENGINE DMG', 'powertrain.driveshaft': 'DRIVESHAFT',
+        'powertrain.gearbox': 'GEARBOX', 'powertrain.transfercase': 'TRANSFER CASE',
+        'powertrain.differential_F': 'DIFF FRONT', 'powertrain.differential_R': 'DIFF REAR',
         'powertrain.wheelaxleFL': 'AXLE FL', 'powertrain.wheelaxleFR': 'AXLE FR',
         'powertrain.wheelaxleRL': 'AXLE RL', 'powertrain.wheelaxleRR': 'AXLE RR'
+      }
+
+      // Last-resort prettifier for keys not in the dictionary above —
+      // turns 'engine.somethingBroken' into 'SOMETHING BROKEN' instead of
+      // shouting the raw camelCase identifier.
+      function prettifyDamageKey (key) {
+        var leaf = key.indexOf('.') >= 0 ? key.substring(key.lastIndexOf('.') + 1) : key
+        // Insert space before each capital letter, then uppercase the result
+        var spaced = leaf.replace(/([A-Z])/g, ' $1').replace(/^\s+/, '')
+        return spaced.toUpperCase()
       }
 
       scope.$on('DamageData', function (_, data) {
@@ -243,7 +268,7 @@ angular.module('beamng.apps')
               if (typeof v === 'object' && v !== null) {
                 scan(v, key)
               } else if (v && v !== 0 && v !== false) {
-                var label = damageLabels[key] || key.toUpperCase()
+                var label = damageLabels[key] || prettifyDamageKey(key)
                 var color = '#ff6600'
                 var vs = String(v).toLowerCase()
                 if (vs === 'true' || vs === '1') color = '#ff4466'
@@ -349,25 +374,25 @@ angular.module('beamng.apps')
       }
 
       /* ==================== LAYOUT ==================== */
-      /*  Left-stack layout — RPM + Speed stacked left, boost fills right:
+      /*  Clear-view layout — gauges hug the edges, the middle is transparent
+       *  so the player can see the car. ~66% width × ~70% height stays clear.
        *
        *  ┌─ HEADER ─────────────────────────────────────────┐  3.5%
        *  ├─ TELEM STRIP ────────────────────────────────────┤  2.8%
-       *  │ RPM GAUGE │  BOOST PSI (4-8)   │ TURBO RPM      │
-       *  │ (cols 1-3)│                    │ (cols 9-12)    │  ~55%
-       *  ├───────────┤                    │                │
-       *  │ SPEED+GEAR│                    │                │
-       *  │ (cols 1-3)│                    │                │
-       *  ├───────────┴────────────────────┴────────────────┤
-       *  │ OIL │ H2O │ THR │ EGT │ G-FORCE │ DRAG TIMER   │  ~10%
-       *  ├─────┴─────┴─────┴─────┴─────────┴──────────────┤  (bars)
-       *  │ BOOST MAP (cols 1-6) │ POWER CURVE (cols 7-12)  │  ~32%
-       *  ├─────────────────────────────────────────────────┤
-       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC] │  3.5%
-       *  └─────────────────────────────────────────────────┘
+       *  │ RPM       │                              │ BOOST │
+       *  │ GAUGE     │                              │       │  ~70%
+       *  │ (cols 1-2)│   ── transparent center ──   │ (11-12)
+       *  ├───────────┤      (see the car here)      ├───────┤
+       *  │ SPEED     │                              │ TURBO │
+       *  │ + GEAR    │                              │ RPM   │
+       *  ├───────────┴──────────────────────────────┴───────┤
+       *  │ OIL │ H2O │ THR │ G-FORCE │ DRAG TIMER           │  ~10%
+       *  ├──────────────────────────────────────────────────┤
+       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC]  │  3.5%
+       *  └──────────────────────────────────────────────────┘
        *
-       *  NA cars: RPM+Speed stack widens to cols 1-5.
-       *  No EGT: bars expand to fill gap (3-col each).
+       *  NA cars: right band hides Boost + Turbo RPM.
+       *  Supercharger: right band shows Boost full-height (no Turbo RPM).
        */
       var GAP = 4
       var appW = 0, appH = 0
@@ -388,36 +413,29 @@ angular.module('beamng.apps')
         var G = GAP
         var usableW = W - G * 2
 
+        // ── Layout philosophy ──
+        // Hug the edges: gauges live in narrow LEFT and RIGHT bands (~17% each)
+        // and in TOP and BOTTOM bands (header/telemetry up top, secondary row +
+        // control bar at bottom). The middle ~66% × ~70% of the dashboard stays
+        // transparent so the player can see the car.
+
         // ── Vertical zone heights ──
         var hdrH  = cl(Math.round(H * 0.035), 26, 40)
         var telH  = cl(Math.round(H * 0.028), 20, 32)
         var barH  = cl(Math.round(H * 0.035), 26, 36)
+        var secH  = cl(Math.round(H * 0.10), 56, 100)
 
         var topY   = G
         var telY   = topY + hdrH + 2
-        var contY  = telY + telH + G          // content area starts here
-        var barY   = H - barH - G             // control bar at bottom
-        var contH  = barY - contY - G         // total content height
+        var barY   = H - barH - G                 // control bar at very bottom
+        var secY   = barY - secH - G              // secondary row above control bar
 
-        // Split content into zones — speed hero dominant, compact secondary bars
-        var hasGraphs = hasTurbo && scope.showGraphs
-        var mainH, secH, graphH
-        var SEC_MIN = 60, SEC_MAX = 120
-        if (hasGraphs) {
-          secH   = cl(Math.round(contH * 0.10), SEC_MIN, SEC_MAX)
-          graphH = Math.round(contH * 0.32)
-          mainH  = contH - secH - graphH - G * 2
-        } else {
-          secH   = cl(Math.round(contH * 0.12), SEC_MIN, SEC_MAX)
-          mainH  = contH - secH - G
-          graphH = 0
-        }
+        // Side bands sit between telemetry and secondary row
+        var sideY  = telY + telH + G
+        var sideH  = secY - sideY - G
+        if (sideH < 80) sideH = 80                // safety floor for tiny windows
 
-        var mainY  = contY
-        var secY   = mainY + mainH + G
-        var graphY = secY + secH + G
-
-        // ── Column helper (12-column grid) ──
+        // ── 12-column grid ──
         var colW = usableW / 12
         function cx (c) { return G + (c - 1) * colW }
         function cw2 (n) { return n * colW - G }
@@ -428,105 +446,99 @@ angular.module('beamng.apps')
           if (extra) el.style.cssText += ';' + extra
         }
 
-        // ── Header ──
+        // ── Header (top band) ──
         box(q('.ft-hdr'), 1, 12, topY, hdrH,
           'display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.82);border:1px solid rgba(40,46,66,0.5);border-radius:6px;padding:0 14px')
 
-        // ── Telemetry strip ──
+        // ── Telemetry strip (top band) ──
         box(q('.ft-telem'), 1, 12, telY, telH,
           'display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px')
 
-        // ── Warning bar (overlay on top of content) ──
+        // ── Warning bar (overlay just under telemetry) ──
         var warnEl = q('.ft-warn')
         if (warnEl) {
-          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+G+'px;top:'+contY+'px;width:'+usableW+'px;height:'+cl(telH,14,24)+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
+          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+G+'px;top:'+sideY+'px;width:'+usableW+'px;height:'+cl(telH,14,24)+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
         }
 
         // ── Damage log (overlay below warning) ──
         var dmgEl = q('.ft-dmg')
         if (dmgEl) {
-          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(contY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(sideY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
-        // ── Main gauges zone ──
-        // Left stack: RPM (top 58%) + Speed/Gear (bottom 42%) — cols 1-3
-        var leftCols = hasTurbo ? 3 : 5
-        var rpmH = Math.round(mainH * 0.58)
-        var spdH = mainH - rpmH
+        // ── Side gauges ──
+        // LEFT band (cols 1-2): RPM (top ~62%) + Speed/Gear (bottom ~38%)
+        // RIGHT band (cols 11-12): Boost (top) + Turbo RPM (bottom) — turbo only
+        // Middle (cols 3-10) stays transparent → 66% horizontal clear zone
+        var sideCols = 2
+        var rpmH = Math.round(sideH * 0.62)
+        var spdH = sideH - rpmH - G
 
-        box(q('.ft-c-rpm'), 1, leftCols, mainY, rpmH)
-        box(q('.ft-c-spd'), 1, leftCols, mainY + rpmH, spdH,
+        box(q('.ft-c-rpm'), 1, sideCols, sideY, rpmH)
+        box(q('.ft-c-spd'), 1, sideCols, sideY + rpmH + G, spdH,
           'display:flex;flex-direction:column;align-items:center;justify-content:center')
 
+        var bstH, trbH
         if (hasTurbo) {
-          // Boost + Turbo fill the remaining cols (4-12)
           var bstEl = q('.ft-c-bst')
           var trbEl = q('.ft-c-trb')
           if (hasTurboRpm) {
-            // Boost cols 4-8 (5 cols), Turbo cols 9-12 (4 cols)
-            box(bstEl, 4, 5, mainY, mainH)
-            box(trbEl, 9, 4, mainY, mainH)
+            // Boost top 62%, Turbo RPM bottom 38% — right band
+            bstH = Math.round(sideH * 0.62)
+            trbH = sideH - bstH - G
+            box(bstEl, 11, sideCols, sideY, bstH)
+            box(trbEl, 11, sideCols, sideY + bstH + G, trbH)
           } else {
-            // Supercharger: Boost cols 4-8
-            if (bstEl) box(bstEl, 4, 5, mainY, mainH)
+            // Supercharger: boost full height in right band
+            bstH = sideH
+            trbH = 0
+            box(bstEl, 11, sideCols, sideY, sideH)
             if (trbEl) trbEl.style.display = 'none'
           }
         } else {
+          bstH = 0; trbH = 0
           var bstEl2 = q('.ft-c-bst'); if (bstEl2) bstEl2.style.display = 'none'
           var trbEl2 = q('.ft-c-trb'); if (trbEl2) trbEl2.style.display = 'none'
         }
 
-        // ── Secondary row: compact bar gauges + G-Force + Drag timer ──
-        if (hasEgt) {
-          box(q('.ft-c-oil'), 1, 2, secY, secH)
-          box(q('.ft-c-h2o'), 3, 2, secY, secH)
-          box(q('.ft-c-thr'), 5, 2, secY, secH)
-          box(q('.ft-c-egt'), 7, 2, secY, secH)
-        } else {
-          box(q('.ft-c-oil'), 1, 3, secY, secH)
-          box(q('.ft-c-h2o'), 4, 3, secY, secH)
-          box(q('.ft-c-thr'), 7, 2, secY, secH)
-          var egtEl = q('.ft-c-egt'); if (egtEl) egtEl.style.display = 'none'
-        }
+        // ── Secondary row (bottom band, just above control bar) ──
+        // Oil + Water + Throttle + G-force + Drag timer
+        box(q('.ft-c-oil'), 1, 3, secY, secH)
+        box(q('.ft-c-h2o'), 4, 3, secY, secH)
+        box(q('.ft-c-thr'), 7, 2, secY, secH)
         box(q('.ft-c-gforce'), 9, 2, secY, secH)
         box(q('.ft-c-drag'), 11, 2, secY, secH,
           'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
 
-        // ── Graphs zone (turbo + showGraphs only) ──
-        if (hasGraphs) {
-          box(q('.ft-c-map'), 1, 6, graphY, graphH, GRAPH_BG)
-          box(q('.ft-c-pwr'), 7, 6, graphY, graphH, GRAPH_BG)
-        } else {
-          var mapEl = q('.ft-c-map'); if (mapEl) mapEl.style.display = 'none'
-          var pwrEl = q('.ft-c-pwr'); if (pwrEl) pwrEl.style.display = 'none'
-        }
+        // ── Graphs disabled in clear-view layout (would intrude on center) ──
+        var mapEl = q('.ft-c-map'); if (mapEl) mapEl.style.display = 'none'
+        var pwrEl = q('.ft-c-pwr'); if (pwrEl) pwrEl.style.display = 'none'
 
-        // ── Control bar (always visible) ──
+        // ── Control bar (very bottom) ──
         var barEl = q('.ft-bar')
         if (barEl) {
           barEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+G+'px;top:'+barY+'px;width:'+usableW+'px;height:'+barH+'px;display:flex;gap:3px;align-items:center'
         }
 
-        // ── Turbo timer overlay (center of screen) ──
+        // ── Turbo timer overlay (top-center, small — out of clear zone) ──
         var ttEl = q('.ft-turbo-timer')
         if (ttEl) {
-          var ttW = cw2(4), ttH2 = Math.round(mainH * 0.5)
-          ttEl.style.cssText = 'position:absolute;z-index:18;left:'+((W-ttW)/2)+'px;top:'+((H-ttH2)/2)+'px;width:'+ttW+'px;height:'+ttH2+'px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,12,20,0.85);border:1px solid rgba(255,102,0,0.3);border-radius:10px;pointer-events:none'
+          var ttW = cw2(4), ttH2 = Math.round(sideH * 0.28)
+          ttEl.style.cssText = 'position:absolute;z-index:18;left:'+((W-ttW)/2)+'px;top:'+(sideY+G)+'px;width:'+ttW+'px;height:'+ttH2+'px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,12,20,0.85);border:1px solid rgba(255,102,0,0.3);border-radius:10px;pointer-events:none'
         }
 
         // ── Build lay object for canvas sizing ──
         var col2W = cw2(2), col3W = cw2(3), col6W = cw2(6)
-        var rpmCanvasW = cw2(leftCols)
+        var sideW = cw2(sideCols)
 
         lay = {
-          gaugeW: rpmCanvasW, gaugeH: rpmH,
-          bstW: cw2(5), bstH: mainH,
-          trbW: cw2(4), trbH: mainH,
-          oilW: hasEgt ? col2W : col3W, oilH: secH,
-          h2oW: hasEgt ? col2W : col3W, h2oH: secH,
+          gaugeW: sideW, gaugeH: rpmH,
+          bstW: sideW, bstH: bstH || sideH,
+          trbW: sideW, trbH: trbH || sideH,
+          oilW: col3W, oilH: secH,
+          h2oW: col3W, h2oH: secH,
           thrW: col2W, thrH: secH,
-          egtW: col2W, egtH: secH,
-          graphW: col6W, graphH: graphH,
+          graphW: col6W, graphH: 0,
           pwrW: col6W,
           gfW: col2W, gfH: secH
         }
@@ -543,7 +555,6 @@ angular.module('beamng.apps')
       var cvsThr = null, ctxThr = null
       var cvsTrb = null, ctxTrb = null
       var cvsGf = null, ctxGf = null
-      var cvsEgt = null, ctxEgt = null
       var dpr = window.devicePixelRatio || 1
 
       function initCanvases () {
@@ -553,7 +564,6 @@ angular.module('beamng.apps')
         if (!cvsH2o) { try { cvsH2o = q('.ft-cv-h2o'); if (cvsH2o) ctxH2o = cvsH2o.getContext('2d') } catch(e){} }
         if (!cvsThr) { try { cvsThr = q('.ft-cv-thr'); if (cvsThr) ctxThr = cvsThr.getContext('2d') } catch(e){} }
         if (!cvsTrb) { try { cvsTrb = q('.ft-cv-trb'); if (cvsTrb) ctxTrb = cvsTrb.getContext('2d') } catch(e){} }
-        if (!cvsEgt) { try { cvsEgt = q('.ft-cv-egt'); if (cvsEgt) ctxEgt = cvsEgt.getContext('2d') } catch(e){} }
         if (!cvsGf) { try { cvsGf = q('.ft-cv-gforce'); if (cvsGf) ctxGf = cvsGf.getContext('2d') } catch(e){} }
         if (!cvsMap) {
           try { cvsMap = q('.ft-cv-map'); if (cvsMap) { ctxMap = cvsMap.getContext('2d')
@@ -615,7 +625,7 @@ angular.module('beamng.apps')
         ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(r*0.11,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(r*0.1,6))
       }
 
-      /* ==================== MINI GAUGE (OIL/H2O/THR/TRB/EGT) ==================== */
+      /* ==================== MINI GAUGE (OIL/H2O/THR/TRB) ==================== */
       function drawMiniGauge (ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
         ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h)
         var cx = w/2, cy = h*0.42, r = Math.min(w,h)*0.32, aw = Math.max(r*0.1,2)
@@ -646,7 +656,7 @@ angular.module('beamng.apps')
         ctx.fillStyle='#c0c8e0';ctx.font='700 '+Math.max(fS*0.5,10).toFixed(0)+'px Consolas,monospace';ctx.fillText(label,cx,h-Math.max(fS*0.3,6))
       }
 
-      /* ==================== BAR GAUGE (compact horizontal — OIL/H2O/THR/EGT) ==================== */
+      /* ==================== BAR GAUGE (compact horizontal — OIL/H2O/THR) ==================== */
       function drawBarGauge (ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
         ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h)
         var pad = Math.max(w * 0.04, 6)
@@ -721,12 +731,11 @@ angular.module('beamng.apps')
         if(ctxH2o){ms=sizeCvs(cvsH2o,lay.h2oW,lay.h2oH);if(ms) drawBarGauge(ctxH2o,ms.w,ms.h,h2oT,130,Math.round(h2oT).toString(),'°C','H2O','#0077ee','#ff3344')}
       }
 
-      /* THR & EGT */
+      /* THR */
       function drawThrTrbGauges () {
         initCanvases(); if(!lay) return
         var ms
         if(ctxThr){ms=sizeCvs(cvsThr,lay.thrW,lay.thrH);if(ms) drawBarGauge(ctxThr,ms.w,ms.h,throttle*100,100,Math.round(throttle*100).toString(),'%','THR','#225533','#00ff88')}
-        if(hasEgt&&ctxEgt){ms=sizeCvs(cvsEgt,lay.egtW,lay.egtH);if(ms) drawBarGauge(ctxEgt,ms.w,ms.h,egt,1000,Math.round(egt).toString(),'°C','EGT','#884400','#ff4400')}
       }
 
       /* ==================== G-FORCE METER ==================== */
@@ -1099,7 +1108,6 @@ angular.module('beamng.apps')
         if (scope.alsFiring) w.push('ALS ACTIVE')
         if (scope.tcsCut > 0.05) w.push('TC -' + Math.round(scope.tcsCut * 100) + '%')
         if (scope.absInterfering) w.push('ABS')
-        if (egt > 850) w.push('EGT ' + Math.round(egt) + '°C')
         scope.warnings = w
       }
 
@@ -1141,19 +1149,18 @@ angular.module('beamng.apps')
       }
 
       /* ==================== TURBO TIMER ==================== */
-      // Turbo cooldown timer: after hard boost driving, when you come to idle,
-      // shows a countdown recommending you let the engine idle before shutdown.
-      // This protects the turbo bearings from oil coking.
-      var turboHotThreshold = 800  // EGT °C — turbo was working hard
+      // Turbo cooldown timer: after sustained boost driving, when you come to
+      // idle, shows a countdown recommending you let the engine idle before
+      // shutdown. This protects the turbo bearings from oil coking.
       var turboWasHot = false
-      var turboHotPeakEgt = 0
+      var turboHotSeconds = 0   // how long the turbo was driven hard (proxy for heat)
 
       function updateTurboTimer () {
-        // Track when turbo was under hard load (high EGT or high boost + RPM)
-        var isHardDriving = (egt > turboHotThreshold) || (boost > 10 && rpm > 4000)
+        // Track when turbo was under hard load (high boost + high RPM)
+        var isHardDriving = boost > 10 && rpm > 4000
         if (isHardDriving) {
           turboWasHot = true
-          if (egt > turboHotPeakEgt) turboHotPeakEgt = egt
+          turboHotSeconds += 1 / 60  // approx — called once per frame
         }
 
         // Trigger: was hot, now idling (low RPM, low throttle, low speed)
@@ -1163,8 +1170,8 @@ angular.module('beamng.apps')
           if (!scope.turboTimerActive) {
             scope.turboTimerActive = true
             turboTimerStart = Date.now()
-            // Duration scales with how hot the turbo was: 30s base, up to 90s
-            turboTimerDuration = cl(turboHotPeakEgt / 15, 30, 90)
+            // Duration scales with how long the turbo was hot: 30s base, up to 90s
+            turboTimerDuration = cl(30 + turboHotSeconds * 2, 30, 90)
           }
           var elapsed = (Date.now() - turboTimerStart) / 1000
           var remaining = Math.max(0, turboTimerDuration - elapsed)
@@ -1172,15 +1179,15 @@ angular.module('beamng.apps')
           if (remaining <= 0) {
             scope.turboTimerActive = false
             turboWasHot = false
-            turboHotPeakEgt = 0
+            turboHotSeconds = 0
           }
         } else if (rpm > 2000 || speed > 20) {
-          // Driving again — cancel timer, reset if turbo cooled down
+          // Driving again — cancel timer, reset if turbo has cooled
           scope.turboTimerActive = false
           turboTimerStart = 0
-          if (egt < 400 && boost < 3) {
+          if (boost < 3) {
             turboWasHot = false
-            turboHotPeakEgt = 0
+            turboHotSeconds = Math.max(0, turboHotSeconds - 0.5)
           }
         }
       }
@@ -1198,13 +1205,13 @@ angular.module('beamng.apps')
             throttle=s.electrics.throttle||0; turboRpm=s.electrics.turboRPM||0
             gForceX=(s.electrics.accXSmooth||s.electrics.accX||0)/9.81
             gForceY=(s.electrics.accYSmooth||s.electrics.accY||0)/9.81
-            egt=s.electrics.exhaustTemperature||s.electrics.egt||0
             engineLoad=s.electrics.engineLoad||0
             fuelVol=s.electrics.fuelVolume||0; fuelCap=s.electrics.fuelCapacity||1
             exhFlow=s.electrics.exhaustFlow||0
             clutchPos=s.electrics.clutch||0
             altitude=s.electrics.altitude||0
             odometer=s.electrics.odometer||0
+            vehMass=s.electrics.fueltech_mass||0
             cel=!!(s.electrics.checkengine)
             lowFuel=!!(s.electrics.lowfuel)
             scope.active=!!(s.electrics.fueltech_active)
@@ -1247,14 +1254,13 @@ angular.module('beamng.apps')
             scope.absInterfering = !!(s.electrics.absActive)
           }
 
-          // Feature detection — detect forced induction (turbo or supercharger) and EGT
+          // Feature detection — detect forced induction (turbo or supercharger)
           var hasFI = !!(s.electrics && s.electrics.fueltech_active)
           var hasBoostData = turboRpm > 0 || boost > 0.5 || boostMax > 0 || hasFI
           if (!detectDone) {
             detectFrames++
             if (hasBoostData) { hasTurbo = true; scope.hasTurbo = true }
             if (turboRpm > 0) hasTurboRpm = true
-            if (egt > 0) { hasEgt = true; scope.hasEgt = true }
             if (detectFrames >= 30) {
               detectDone = true
               lay = null
@@ -1263,7 +1269,6 @@ angular.module('beamng.apps')
           } else {
             if (!hasTurbo && hasBoostData) { hasTurbo = true; scope.hasTurbo = true; lay = null; applyGraphVisibility() }
             if (!hasTurboRpm && turboRpm > 0) { hasTurboRpm = true; lay = null; applyGraphVisibility() }
-            if (!hasEgt && egt > 0) { hasEgt = true; scope.hasEgt = true; lay = null; applyGraphVisibility() }
           }
 
           // Peak trackers
@@ -1294,6 +1299,7 @@ angular.module('beamng.apps')
           scope.clutchStr=Math.round((1-clutchPos)*100).toString()
           scope.altStr=Math.round(altitude).toString()
           scope.odoStr=(odometer/1000).toFixed(1)
+          scope.weightStr=Math.round(vehMass).toString()
           scope.cel=cel; scope.lowFuel=lowFuel
 
           // Brake temperatures from wheelThermalData or electrics
