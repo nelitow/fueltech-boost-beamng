@@ -44,8 +44,53 @@
   color: #667088;
   cursor: pointer;
   letter-spacing: 1px;
+  border: 1px solid rgba(102, 112, 136, 0.4);
+  border-radius: 3px;
+  padding: 2px 6px;
+  user-select: none;
 }
-.ft-toggle:hover { color: #ff6600; }
+.ft-toggle:hover { color: #ff6600; border-color: rgba(255, 102, 0, 0.6); }
+
+/* TUNE overlay — compact, centered. Backdrop catches outside-clicks to close. */
+.ft-tune-backdrop {
+  position: absolute;
+  z-index: 30;
+  left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+.ft-tune-panel {
+  position: absolute;
+  z-index: 31;
+  background: rgba(10, 12, 20, 0.96);
+  border: 1px solid rgba(255, 102, 0, 0.4);
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.ft-tune-title {
+  position: absolute;
+  left: 8px; right: 8px; top: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #ff8800;
+  height: 16px;
+  pointer-events: none;
+}
+.ft-tune-close {
+  font-size: 18px;
+  line-height: 14px;
+  color: #99a;
+  cursor: pointer;
+  padding: 0 6px;
+  pointer-events: auto;
+}
+.ft-tune-close:hover { color: #ff4466; }
 
 .ft-dot {
   width: 7px;

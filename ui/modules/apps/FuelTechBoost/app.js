@@ -109,6 +109,10 @@ angular.module('beamng.apps')
       scope.brakeTemps = []
       scope.damageLog = []
 
+      // TUNE overlay — on-demand boost map + power curve. Hidden by default
+      // so the dashboard's middle stays clear; opened via the TUNE button.
+      scope.tuneOpen = false
+
       // Shift light
       scope.shiftLight = false
       var shiftRpmPct = 0.9
@@ -335,6 +339,18 @@ angular.module('beamng.apps')
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("absController")') } catch(e) {}
       }
 
+      // Open/close the TUNE overlay (boost map + power curve). Forces a
+      // relayout so doLayout can reposition the canvases and refresh sizes.
+      scope.toggleTune = function () {
+        scope.tuneOpen = !scope.tuneOpen
+        lay = null
+        if (appW && appH) doLayout(appW, appH)
+        // Repaint graphs immediately when opening so the user doesn't see a blank panel
+        if (scope.tuneOpen) {
+          try { drawBoostMap(); drawPower() } catch(e) {}
+        }
+      }
+
       // Drag timer
       scope.resetDrag = function () {
         dragActive = false; dragStart = 0; drag100t = 0; drag200t = 0
@@ -342,18 +358,9 @@ angular.module('beamng.apps')
         scope.drag100done = false; scope.drag200done = false
       }
 
-      scope.showGraphs = true
-      scope.toggleGraphs = function () {
-        scope.showGraphs = !scope.showGraphs
-        lay = null
-        if (appW > 100 && appH > 100) {
-          doLayout(appW, appH)
-          drawAll()
-        }
-      }
-
+      // Visibility hook for feature-detection: invalidate the cached layout
+      // so doLayout re-runs with fresh hasTurbo / hasTurboRpm flags.
       function applyGraphVisibility () {
-        // All visibility is handled by doLayout — just trigger relayout
         lay = null
       }
 
@@ -510,9 +517,38 @@ angular.module('beamng.apps')
         box(q('.ft-c-drag'), 11, 2, secY, secH,
           'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
 
-        // ── Graphs disabled in clear-view layout (would intrude on center) ──
-        var mapEl = q('.ft-c-map'); if (mapEl) mapEl.style.display = 'none'
-        var pwrEl = q('.ft-c-pwr'); if (pwrEl) pwrEl.style.display = 'none'
+        // ── TUNE overlay (compact centered panel, on-demand) ──
+        // Holds the interactive boost map + power curve. Only positioned
+        // when scope.tuneOpen is true, so the dashboard middle stays clear
+        // by default. Sized as a compact panel: 55% width × 45% height,
+        // clamped to keep it readable on small/large dashboards.
+        var tunePanel = q('.ft-tune-panel')
+        var mapEl = q('.ft-c-map')
+        var pwrEl = q('.ft-c-pwr')
+        var tuneMapW = 0, tuneMapH = 0, tunePwrW = 0
+        if (scope.tuneOpen && tunePanel) {
+          var tuneW = cl(Math.round(W * 0.55), 420, 760)
+          var tuneH = cl(Math.round(H * 0.45), 220, 380)
+          var tuneX = (W - tuneW) / 2
+          var tuneY = (H - tuneH) / 2
+          tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.96);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden'
+
+          // Inside the panel: title strip on top, then map (left) + pwr (right)
+          var titleH = 22
+          var pad = 6
+          var inW = tuneW - pad * 2
+          var inH = tuneH - titleH - pad
+          var halfW = Math.floor(inW / 2) - 3
+          tuneMapW = halfW; tuneMapH = inH
+          tunePwrW = halfW
+          var innerY = titleH
+          if (mapEl) mapEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+pad+'px;top:'+innerY+'px;width:'+halfW+'px;height:'+inH+'px;overflow:hidden;' + GRAPH_BG
+          if (pwrEl) pwrEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(pad+halfW+6)+'px;top:'+innerY+'px;width:'+halfW+'px;height:'+inH+'px;overflow:hidden;' + GRAPH_BG
+        } else {
+          if (tunePanel) tunePanel.style.cssText = 'display:none'
+          if (mapEl) mapEl.style.display = 'none'
+          if (pwrEl) pwrEl.style.display = 'none'
+        }
 
         // ── Control bar (very bottom) ──
         var barEl = q('.ft-bar')
@@ -538,8 +574,10 @@ angular.module('beamng.apps')
           oilW: col3W, oilH: secH,
           h2oW: col3W, h2oH: secH,
           thrW: col2W, thrH: secH,
-          graphW: col6W, graphH: 0,
-          pwrW: col6W,
+          // Boost map + power curve get real sizes only when the TUNE panel
+          // is open; otherwise they're hidden and never drawn.
+          graphW: tuneMapW, graphH: tuneMapH,
+          pwrW: tunePwrW,
           gfW: col2W, gfH: secH
         }
         return lay
@@ -1093,7 +1131,8 @@ angular.module('beamng.apps')
       function drawAll () {
         drawRpmGauge(); drawOilH2oGauges(); drawThrTrbGauges(); drawGForce()
         if (hasTurbo) { drawBoostGauge(); if (hasTurboRpm) drawTurboRpmGauge() }
-        if (hasTurbo && scope.showGraphs) { drawBoostMap(); drawPower() }
+        // Boost map + power curve only render when the TUNE overlay is open
+        if (hasTurbo && scope.tuneOpen) { drawBoostMap(); drawPower() }
       }
 
       /* ==================== WARNINGS ==================== */

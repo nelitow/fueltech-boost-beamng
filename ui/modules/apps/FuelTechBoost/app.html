@@ -11,7 +11,9 @@
     <span class="ft-hdr-sep">|</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-ver">7.1.0</span>
+    <span class="ft-toggle" ng-if="hasTurbo" ng-click="toggleTune()"
+          ng-style="tuneOpen && {'color':'#ff8800','border-color':'#ff8800'}">{{tuneOpen?'CLOSE':'TUNE'}}</span>
+    <span class="ft-ver">7.2.0</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->
@@ -87,9 +89,17 @@
     <div class="ft-drag-reset" ng-click="resetDrag()">RESET</div>
   </div>
 
-  <!-- Graphs (turbo only) -->
-  <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
-  <div class="ft-cell ft-c-pwr"><canvas class="ft-cv ft-cv-pwr"></canvas></div>
+  <!-- Tune overlay: on-demand, compact centered panel with boost map + power curve.
+       Hidden by default to keep the dashboard's middle clear. -->
+  <div class="ft-tune-backdrop" ng-if="tuneOpen" ng-click="toggleTune()"></div>
+  <div class="ft-tune-panel" ng-show="tuneOpen">
+    <div class="ft-tune-title">
+      <span>TUNE — drag the orange dots to set boost by RPM</span>
+      <span class="ft-tune-close" ng-click="toggleTune()">×</span>
+    </div>
+    <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
+    <div class="ft-cell ft-c-pwr"><canvas class="ft-cv ft-cv-pwr"></canvas></div>
+  </div>
 
   <!-- Bottom: control bar (always visible) -->
   <div class="ft-bar">
