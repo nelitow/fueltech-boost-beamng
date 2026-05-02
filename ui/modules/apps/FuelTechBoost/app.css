@@ -153,6 +153,14 @@
   transition: color 0.15s ease, text-shadow 0.15s ease;
 }
 
+.ft-gear-mode {
+  font-size: 9px;
+  color: #6a7498;
+  letter-spacing: 2px;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
 /* Shift light — gear flash */
 .ft-shift-gear {
   color: #ff2244 !important;

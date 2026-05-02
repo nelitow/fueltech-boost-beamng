@@ -87,7 +87,7 @@ angular.module('beamng.apps')
       scope.active = false; scope.overboost = false
       scope.rpmStr = '0'; scope.boostStr = '0.0'; scope.tgtStr = '0.0'; scope.peakStr = '0.0'
       scope.peakRpmStr = '0'
-      scope.speedStr = '0'; scope.gearStr = 'N'
+      scope.speedStr = '0'; scope.gearStr = 'N'; scope.gearModeStr = ''
       scope.preset = 'CUSTOM'
       scope.dtFeatures = []
       scope.dmodes = []
@@ -1351,9 +1351,48 @@ angular.module('beamng.apps')
             cel=!!(s.electrics.checkengine)
             lowFuel=!!(s.electrics.lowfuel)
             scope.active=!!(s.electrics.fueltech_active)
-            var gv=s.electrics.gear_M; if(gv===undefined)gv=s.electrics.gearIndex; if(gv===undefined)gv=0
-            gear = gv
-            if(gv<0)scope.gearStr='R'; else if(gv===0)scope.gearStr='N'; else scope.gearStr=gv.toString()
+            // ── Gear display ──
+            // Prefer BeamNG's pre-formatted `gear` string — that's the
+            // canonical "what the cluster shows" value and already includes
+            // P/R/N/D/S/M etc. for automatics. Fall back to numeric for
+            // manuals on builds that don't publish `gear`.
+            //
+            // Gearbox mode classification:
+            //   gear_A  — auto trans display (P/R/N/D/S/M/2/L)
+            //   gear_M  — manual trans gear (numeric, or set when in M mode)
+            //   gear    — whichever the gauge cluster wants to show
+            var gearAuto = s.electrics.gear_A
+            var gearManual = s.electrics.gear_M
+            var gearStr = s.electrics.gear
+            var gearIdx = s.electrics.gearIndex
+            if (gearIdx === undefined) gearIdx = (typeof gearManual === 'number') ? gearManual : 0
+            gear = gearIdx
+
+            // Auto in M (manumatic) — append the numeric gear so the user
+            // sees both the mode AND which gear they're locked in.
+            if (gearAuto === 'M' && typeof gearManual === 'number' && gearManual > 0) {
+              scope.gearStr = 'M' + gearManual
+            } else if (typeof gearStr === 'string' && gearStr !== '') {
+              scope.gearStr = gearStr
+            } else if (typeof gearAuto === 'string' && gearAuto !== '') {
+              scope.gearStr = gearAuto
+            } else if (gearIdx < 0) {
+              scope.gearStr = 'R'
+            } else if (gearIdx === 0) {
+              scope.gearStr = 'N'
+            } else {
+              scope.gearStr = String(gearIdx)
+            }
+
+            // Mode label shown under the gear: tells you whether you're
+            // looking at an auto, a manual, or an auto in manual mode.
+            if (gearAuto !== undefined) {
+              scope.gearModeStr = (gearAuto === 'M') ? 'AUTO · MANUAL' : 'AUTO'
+            } else if (gearManual !== undefined) {
+              scope.gearModeStr = 'MANUAL'
+            } else {
+              scope.gearModeStr = ''
+            }
 
             // Drivetrain features
             for (var di = 0; di < scope.dtFeatures.length; di++) {
