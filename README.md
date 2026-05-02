@@ -13,57 +13,73 @@ Works with **turbocharged** and **supercharged** vehicles. On naturally aspirate
 
 ---
 
-## Installation (Step by Step)
+## Installation
 
-### 1. Download the mod
+> ⚠️ **Most "doesn't show up" issues come from extracting the zip or skipping step 3.** Read each step.
 
-**[⬇ Click here to download the latest `fueltech_boost_controller.zip`](https://github.com/nelitow/fueltech-boost-beamng/releases/latest/download/fueltech_boost_controller.zip)**
+### 1. Download the zip — DO NOT EXTRACT IT
 
-(That link always serves the most recent release — no need to hunt through the [Releases page](https://github.com/nelitow/fueltech-boost-beamng/releases).)
+**[⬇ Click here to download `fueltech_boost_controller.zip`](https://github.com/nelitow/fueltech-boost-beamng/releases/latest/download/fueltech_boost_controller.zip)**
 
-### 2. Find your BeamNG mods folder
+(That link always serves the latest release.)
 
-Open File Explorer and paste this into the address bar:
+Leave it as a `.zip` file. BeamNG loads zipped mods directly — extracting them is a common cause of broken installs.
+
+### 2. Drop the zip in your BeamNG mods folder
+
+Open File Explorer and paste **one** of these into the address bar (whichever exists on your system):
 
 ```
-%LocalAppData%\BeamNG\BeamNG.drive
+%USERPROFILE%\Documents\BeamNG.drive\mods
+```
+```
+%LocalAppData%\BeamNG.drive\<version>\mods
 ```
 
-You'll see a folder with a version number (like `0.34` or `0.35`). Open it, then open the **`mods`** folder inside. If there's no `unpacked` folder, create one.
+(Most installs use the `Documents` one. The `LocalAppData` one is for Steam Cloud or portable setups.)
 
-Your path should look like:
-```
-C:\Users\YourName\AppData\Local\BeamNG\BeamNG.drive\0.34\mods\unpacked\
-```
+If the `mods` folder doesn't exist, create it. Then **drop the .zip directly inside it**:
 
-### 3. Extract the zip
-
-Extract `fueltech_boost_controller.zip` into the `unpacked` folder. You should end up with:
 ```
-mods/unpacked/fueltech_boost_controller/
-    lua/
-    ui/
-    vehicles/
-    ...
+mods/
+└── fueltech_boost_controller.zip      ← like this
 ```
 
-Make sure the folder is called `fueltech_boost_controller` (not nested inside another folder).
+**Do NOT** create an `unpacked` folder, **do NOT** extract the zip, **do NOT** rename it.
 
-### 4. Launch BeamNG and add the dashboard
+### 3. ⚠️ Enable the part on your vehicle (most-skipped step)
 
-1. Start BeamNG.drive and load any vehicle
-2. Press **Escape** to open the menu
-3. Click **UI Apps** (bottom left)
-4. Search for **"FuelTech Dashboard"**
-5. Click it to add it to your screen
-6. Drag the edges to resize it — it will auto-fill to whatever size you set
+The mod installs as an ECU part that uses the N2O system slot. You have to enable it once per vehicle:
 
-### 5. Done!
+1. Spawn any **turbocharged or supercharged** car (most modern cars work — pickups, EVs, and race-prep cars often don't have a free N2O slot).
+2. Press **`Ctrl + W`** to open Vehicle Config.
+3. In the parts tree, find **"FuelTech Boost Controller"** under **Additional Modification**.
+4. Click to add it. Save the config if you want it to persist.
 
-The dashboard will automatically detect your vehicle's features:
-- **Turbo car** — boost map, PSI gauge, turbo RPM, power curves, presets all appear
-- **Supercharged car** — boost PSI gauge appears (no turbo RPM), boost control via bypass valve
-- **NA car** — only RPM, speed, G-force, temps, and telemetry show (no boost features)
+If you skip this step, the dashboard will spawn but the boost controller won't attach — your car will blow past the limiter as if the mod weren't there.
+
+### 4. Add the dashboard to your screen
+
+1. Press **Esc** → click **UI Apps** (bottom-left of the menu).
+2. Search for **"FuelTech Dashboard"**.
+3. Click it once to drop it on screen.
+4. **Drag the edges** to resize. The dashboard fills whatever area you give it — small corner overlay or full-screen, your call.
+
+### 5. Done
+
+The dashboard auto-detects your vehicle:
+- **Turbo car** — boost map (TUNE button), PSI gauge, turbo RPM, power curves, presets.
+- **Supercharged car** — boost PSI gauge, boost control via bypass valve (no turbo RPM).
+- **NA car** — RPM, speed, G-force, temps, telemetry only (boost features auto-hide).
+
+### Still not working?
+
+| Problem | Fix |
+|---------|-----|
+| Dashboard doesn't appear in UI Apps | The zip is in the wrong folder. Check both paths in step 2. |
+| Dashboard appears but ACTIVE never lights up | You skipped step 3 (enable the part in Vehicle Config). |
+| "FuelTech Boost Controller" not in Vehicle Config | Your vehicle has no N2O slot, or another mod is using it. Try a different car. |
+| Wrong folder structure after extracting | Don't extract — see step 1. If you already did, delete the unpacked folder and restart at step 1. |
 
 ---
 
