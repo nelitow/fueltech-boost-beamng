@@ -80,15 +80,16 @@
   letter-spacing: 1px;
   color: #ff8800;
   height: 16px;
-  pointer-events: none;
+  cursor: grab;        /* title bar is the drag handle */
+  user-select: none;
 }
+.ft-tune-title:active { cursor: grabbing; }
 .ft-tune-close {
   font-size: 18px;
   line-height: 14px;
   color: #99a;
   cursor: pointer;
   padding: 0 6px;
-  pointer-events: auto;
 }
 .ft-tune-close:hover { color: #ff4466; }
 

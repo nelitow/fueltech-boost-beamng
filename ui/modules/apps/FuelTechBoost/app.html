@@ -13,7 +13,7 @@
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
     <span class="ft-toggle" ng-if="hasTurbo" ng-click="toggleTune()"
           ng-style="tuneOpen && {'color':'#ff8800','border-color':'#ff8800'}">{{tuneOpen?'CLOSE':'TUNE'}}</span>
-    <span class="ft-ver">7.2.1</span>
+    <span class="ft-ver">7.2.2</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->
@@ -93,8 +93,8 @@
        Hidden by default to keep the dashboard's middle clear. -->
   <div class="ft-tune-backdrop" ng-if="tuneOpen" ng-click="toggleTune()"></div>
   <div class="ft-tune-panel" ng-show="tuneOpen">
-    <div class="ft-tune-title">
-      <span>TUNE — drag the orange dots to set boost by RPM</span>
+    <div class="ft-tune-title" ng-mousedown="tuneDragStart($event)" ng-touchstart="tuneDragStart($event)">
+      <span>⠿ TUNE — drag dots to set boost-by-RPM. Drag this bar to move the panel.</span>
       <span class="ft-tune-close" ng-click="toggleTune()">×</span>
     </div>
     <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>

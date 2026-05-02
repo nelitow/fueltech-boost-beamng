@@ -111,7 +111,11 @@ angular.module('beamng.apps')
 
       // TUNE overlay — on-demand boost map + power curve. Hidden by default
       // so the dashboard's middle stays clear; opened via the TUNE button.
+      // Position is user-draggable: tuneOffsetX/Y are added to the centered
+      // base position (so 0,0 = centered, default first-open behavior).
       scope.tuneOpen = false
+      var tuneOffsetX = 0, tuneOffsetY = 0
+      var tuneDrag = null  // {startX, startY, baseX, baseY} while dragging
 
       // Shift light
       scope.shiftLight = false
@@ -351,6 +355,43 @@ angular.module('beamng.apps')
         }
       }
 
+      // ── TUNE panel drag handlers ──
+      // The title bar is the drag handle. While dragging, we update
+      // tuneOffsetX/Y and re-run doLayout each frame so the panel follows
+      // the cursor (no separate transform — keeps the layout authoritative).
+      scope.tuneDragStart = function (ev) {
+        // Don't start a drag when the user is aiming for the × close button —
+        // mousedown would begin dragging and the click would never register.
+        var t = ev.target
+        if (t && t.classList && t.classList.contains('ft-tune-close')) return
+        ev.preventDefault()
+        var pt = (ev.touches && ev.touches[0]) || ev
+        tuneDrag = { startX: pt.clientX, startY: pt.clientY, baseX: tuneOffsetX, baseY: tuneOffsetY }
+        // Use document-level listeners so dragging continues even if the
+        // cursor leaves the title bar (or the panel) mid-drag.
+        document.addEventListener('mousemove', tuneDragMove)
+        document.addEventListener('mouseup',   tuneDragEnd)
+        document.addEventListener('touchmove', tuneDragMove, {passive:false})
+        document.addEventListener('touchend',  tuneDragEnd)
+      }
+      function tuneDragMove (ev) {
+        if (!tuneDrag) return
+        ev.preventDefault()
+        var pt = (ev.touches && ev.touches[0]) || ev
+        tuneOffsetX = tuneDrag.baseX + (pt.clientX - tuneDrag.startX)
+        tuneOffsetY = tuneDrag.baseY + (pt.clientY - tuneDrag.startY)
+        lay = null
+        if (appW && appH) doLayout(appW, appH)
+        try { drawBoostMap(); drawPower() } catch(e) {}
+      }
+      function tuneDragEnd () {
+        tuneDrag = null
+        document.removeEventListener('mousemove', tuneDragMove)
+        document.removeEventListener('mouseup',   tuneDragEnd)
+        document.removeEventListener('touchmove', tuneDragMove)
+        document.removeEventListener('touchend',  tuneDragEnd)
+      }
+
       // Drag timer
       scope.resetDrag = function () {
         dragActive = false; dragStart = 0; drag100t = 0; drag200t = 0
@@ -529,8 +570,15 @@ angular.module('beamng.apps')
         if (scope.tuneOpen && tunePanel) {
           var tuneW = cl(Math.round(W * 0.55), 420, 760)
           var tuneH = cl(Math.round(H * 0.45), 220, 380)
-          var tuneX = (W - tuneW) / 2
-          var tuneY = (H - tuneH) / 2
+          // Centered base position + user drag offset. Clamp so the title
+          // bar always stays grabbable inside the dashboard (at least 60px
+          // of the panel on each axis must remain on-screen).
+          var baseX = (W - tuneW) / 2
+          var baseY = (H - tuneH) / 2
+          var minX = -tuneW + 60, maxX = W - 60
+          var minY = 0,            maxY = H - 30
+          var tuneX = cl(baseX + tuneOffsetX, minX, maxX)
+          var tuneY = cl(baseY + tuneOffsetY, minY, maxY)
           tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.96);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden'
 
           // Inside the panel: title strip on top, then map (left) + pwr (right)

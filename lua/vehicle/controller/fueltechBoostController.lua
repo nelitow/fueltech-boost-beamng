@@ -46,6 +46,34 @@ local sendProfileList
 local presets = {}
 local stockBoostMax = 0  -- saved from the turbo's boostMax at init
 
+-- Atmospheric pressure (PSI) — used for the manifold-absolute-pressure (MAP)
+-- model. Engine torque scales with absolute pressure, not gauge boost; at
+-- 0 PSI gauge an engine still makes its NA torque from the ~14.7 PSI of
+-- atmosphere it's breathing.
+local ATM_PSI = 14.7
+
+-- Project the torque an engine would make at a given gauge boost, given the
+-- stock-with-OEM-boost torque and the OEM boost it was measured at.
+--   torqueRatio = (atm + targetBoost) / (atm + stockBoost)
+-- so projected torque = stockTorque * torqueRatio.
+local function projectTorqueFromBoost(stockTorqueWithStockBoost, targetGaugePSI, stockGaugePSI)
+  local stockMAP  = ATM_PSI + math.max(0, stockGaugePSI or 0)
+  local targetMAP = ATM_PSI + math.max(0, targetGaugePSI or 0)
+  if stockMAP <= 0 then return stockTorqueWithStockBoost end
+  return stockTorqueWithStockBoost * (targetMAP / stockMAP)
+end
+
+-- Inverse of projectTorqueFromBoost: given a torque limit and the stock
+-- torque/boost reference, what gauge PSI keeps us at exactly the limit?
+--   targetMAP = (limit / stockTorque) * stockMAP
+--   safeGaugePSI = targetMAP - atm
+local function safeBoostForTorqueLimit(stockTorqueWithStockBoost, torqueLimit, stockGaugePSI)
+  if stockTorqueWithStockBoost <= 0 then return 0 end
+  local stockMAP = ATM_PSI + math.max(0, stockGaugePSI or 0)
+  local targetMAP = (torqueLimit / stockTorqueWithStockBoost) * stockMAP
+  return targetMAP - ATM_PSI
+end
+
 local function lerp(a, b, t)
   return a + (b - a) * t
 end
@@ -529,14 +557,11 @@ local function sendPowerCurves()
     local stockTorque = baseTorque * stockCoef
     local ourBoostPSI = getTargetBoost(rpmVal)
 
-    -- Calculate torque ratio: stock torque curve already includes stock boost,
-    -- so ratio is how much our target differs from stock
-    local boostRatio = 1
-    if refBoost > 0 then
-      boostRatio = ourBoostPSI / refBoost
-    end
-
-    local projTorque = stockTorque * boostRatio
+    -- MAP-based torque projection. The OEM stock torque curve already
+    -- bakes in the stock boost (refBoost), so we scale by the ratio of
+    -- target manifold pressure to stock manifold pressure — both absolute,
+    -- not gauge. At 0 gauge boost this correctly returns NA torque (not 0).
+    local projTorque = projectTorqueFromBoost(stockTorque, ourBoostPSI, refBoost)
     local projPowerKw = projTorque * rpmVal * 0.10471975 / 1000
     local stockPowerKw = stockTorque * rpmVal * 0.10471975 / 1000
 
@@ -633,28 +658,33 @@ local function autoMax()
   local refBoost2 = stockBoostMax
   if refBoost2 <= 0 then refBoost2 = electrics.values.turboBoostMax or electrics.values.boostMax or 0 end
 
+  -- Per-RPM math, MAP-based. Solve for the gauge PSI that puts projected
+  -- torque exactly at torqueLimit, then apply a 95% safety margin and clamp.
   for i, rpmVal in ipairs(rpmPoints) do
     local baseTorque = getBaseTorque(rpmVal)
     local stockCoef = turboCoefs[rpmVal] or 1
     local stockTorque = baseTorque * stockCoef
 
     local safePSI = 0
-    if stockTorque > 1 and refBoost2 > 0 then
-      -- projTorque = stockTorque * (safePSI / refBoost2)
-      -- torqueLimit = stockTorque * (safePSI / refBoost2)
-      safePSI = (torqueLimit / stockTorque) * refBoost2
+    if stockTorque > 1 then
+      safePSI = safeBoostForTorqueLimit(stockTorque, torqueLimit, refBoost2)
     end
 
-    -- 95% safety margin, clamp to sane range
+    -- 95% safety margin, clamp to a sane range
     safePSI = math.max(0, math.min(safePSI * 0.95, 50))
     -- Round to nearest 0.5 PSI
     safePSI = math.floor(safePSI * 2) / 2
 
     boostTable[i] = {rpmVal, safePSI}
+
+    -- Sanity-check log entry per RPM (visible in BeamNG console / log)
+    log("D", "fueltechBoost",
+      string.format("AutoMax @ %d rpm: stockTq=%.0fNm limit=%.0fNm refBoost=%.1f -> safePSI=%.1f",
+        rpmVal, stockTorque, torqueLimit, refBoost2, safePSI))
   end
 
   currentPreset = "AUTOMAX"
-  log("I", "fueltechBoost", "Applied Auto Max preset (limit: " .. torqueLimit .. " Nm)")
+  log("I", "fueltechBoost", string.format("Applied Auto Max preset (torque limit: %d Nm, ref boost: %.1f PSI)", torqueLimit, refBoost2))
   getBoostTable()
   sendPowerCurves()
 end
