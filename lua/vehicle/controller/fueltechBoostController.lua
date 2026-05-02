@@ -38,6 +38,19 @@ local massUpdateTimer = 0
 local savedProfiles = {}
 local profileDir = nil
 
+-- Auto-save: BeamNG re-runs init() on Ctrl+R, part-swap, and full reload,
+-- which would otherwise wipe the user's custom boost map back to whatever
+-- the jbeam variables were last saved as. We persist the live map to a
+-- per-vehicle "_autosave" profile and restore it during init.
+local AUTOSAVE_NAME = "_autosave"
+local autosaveDirty = false
+local autosaveTimer = 0
+local AUTOSAVE_INTERVAL = 1.5  -- seconds between writes when something changed
+
+local function markBoostMapDirty()
+  autosaveDirty = true
+end
+
 -- Forward declarations
 local loadProfiles
 local sendProfileList
@@ -199,6 +212,29 @@ local function updateGFX(dt)
   end
   electrics.values.fueltech_mass = cachedMass
 
+  -- ── Auto-save throttle ──
+  -- markBoostMapDirty() flips a flag on every map mutation. We commit to
+  -- disk at most once per AUTOSAVE_INTERVAL so dragging a dot doesn't
+  -- thrash the filesystem.
+  if autosaveDirty then
+    autosaveTimer = autosaveTimer + dt
+    if autosaveTimer >= AUTOSAVE_INTERVAL then
+      autosaveDirty = false
+      autosaveTimer = 0
+      -- Inline write (avoids touching the saveProfile() side effects like
+      -- the "Loaded profile" log line and the UI profile-list refresh).
+      if profileDir then
+        local data = { name = AUTOSAVE_NAME, boostTable = {}, gearMultipliers = gearMultipliers, boostByGear = boostByGear, currentPreset = currentPreset }
+        for i = 1, #boostTable do data.boostTable[i] = {boostTable[i][1], boostTable[i][2]} end
+        savedProfiles[AUTOSAVE_NAME] = data
+        pcall(function()
+          FS:directoryCreate(profileDir, true)
+          writeFile(profileDir .. "/" .. AUTOSAVE_NAME .. ".json", jsonEncode(data))
+        end)
+      end
+    end
+  end
+
   -- ── Anti-Lag System (ALS) ──
   -- When enabled and driver lifts off throttle at high RPM:
   -- keep throttle partially open + hold wastegate to maintain turbo spool
@@ -333,6 +369,22 @@ local function init(jbeamData)
   -- Load saved profiles
   loadProfiles()
 
+  -- Restore the auto-saved boost map if one exists. This preserves user
+  -- tuning across Ctrl+R, part-swap, and full vehicle reload — all of
+  -- which re-run init() and would otherwise reset the map to whatever the
+  -- jbeam variables were last persisted as.
+  local auto = savedProfiles[AUTOSAVE_NAME]
+  if auto and auto.boostTable and #auto.boostTable > 0 then
+    boostTable = {}
+    for i, pt in ipairs(auto.boostTable) do boostTable[i] = {pt[1], pt[2]} end
+    if auto.gearMultipliers then
+      for i, val in ipairs(auto.gearMultipliers) do gearMultipliers[i] = val end
+    end
+    if auto.boostByGear ~= nil then boostByGear = auto.boostByGear end
+    if auto.currentPreset then currentPreset = auto.currentPreset end
+    log("I", "fueltechBoost", "Restored boost map from autosave (" .. #boostTable .. " points, preset: " .. tostring(currentPreset) .. ")")
+  end
+
   if enabled and hasFI then
     M.updateGFX = updateGFX
     log("I", "fueltechBoost", "FuelTech Boost Controller initialized: " .. fiType .. ", " .. #boostTable .. " breakpoints, stockBoostMax: " .. stockBoostMax .. " PSI")
@@ -364,6 +416,7 @@ local function setPoint(index, rpmVal, psiVal)
     boostTable[index][2] = psiVal
     table.sort(boostTable, function(a, b) return a[1] < b[1] end)
     currentPreset = "CUSTOM"
+    markBoostMapDirty()
   end
 end
 
@@ -378,6 +431,7 @@ end
 -- Boost-by-gear functions
 local function toggleBoostByGear()
   boostByGear = not boostByGear
+  markBoostMapDirty()
   guihooks.trigger("fueltechBoostByGearInfo", {
     enabled = boostByGear,
     multipliers = gearMultipliers
@@ -402,6 +456,7 @@ end
 local function setGearMultiplier(gearIdx, mul)
   if gearIdx >= 1 and gearIdx <= 8 then
     gearMultipliers[gearIdx] = math.max(0, math.min(mul, 1.5))
+    markBoostMapDirty()
     guihooks.trigger("fueltechBoostByGearInfo", {
       enabled = boostByGear,
       multipliers = gearMultipliers
@@ -437,7 +492,9 @@ end
 sendProfileList = function()
   local names = {}
   for name, _ in pairs(savedProfiles) do
-    table.insert(names, name)
+    -- The "_autosave" profile is internal — restored automatically on
+    -- vehicle reload, never user-facing. Filter it out of the dropdown.
+    if name ~= AUTOSAVE_NAME then table.insert(names, name) end
   end
   table.sort(names)
   guihooks.trigger("fueltechProfileList", names)
@@ -620,6 +677,7 @@ local function setPreset(name)
 
   currentPreset = name
   log("I", "fueltechBoost", "Applied preset: " .. name)
+  markBoostMapDirty()
   getBoostTable()
   sendPowerCurves()
 end
@@ -685,6 +743,7 @@ local function autoMax()
 
   currentPreset = "AUTOMAX"
   log("I", "fueltechBoost", string.format("Applied Auto Max preset (torque limit: %d Nm, ref boost: %.1f PSI)", torqueLimit, refBoost2))
+  markBoostMapDirty()
   getBoostTable()
   sendPowerCurves()
 end

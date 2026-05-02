@@ -897,6 +897,35 @@ angular.module('beamng.apps')
         function tx(r){return BP.l+cl(r/maxRPM,0,1)*BGW}
         function ty(v){return BP.t+BGH-cl(v/maxPSI,0,1)*BGH}
 
+        // ── Hardware turbo limit zone ──
+        // Anything above the stock turbo's boostMax can't be reached by the
+        // wastegate alone — it requires OVERBOOST. Tint the unreachable zone
+        // and draw a labeled limit line so users can see why their target
+        // isn't being delivered.
+        if (boostMax > 0 && boostMax < maxPSI) {
+          var limY = ty(boostMax)
+          // Fill the zone above the line
+          ctx.fillStyle = scope.forceOB ? 'rgba(255,170,0,0.07)' : 'rgba(120,130,150,0.10)'
+          ctx.fillRect(BP.l, BP.t, BGW, limY - BP.t)
+          // Dashed limit line
+          ctx.save()
+          ctx.setLineDash([6, 4])
+          ctx.strokeStyle = scope.forceOB ? 'rgba(255,170,0,0.7)' : 'rgba(160,170,190,0.6)'
+          ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(BP.l, limY); ctx.lineTo(BP.l + BGW, limY); ctx.stroke()
+          ctx.restore()
+          // Label on the right edge
+          ctx.font = cl(g.fs, 9, 12).toFixed(0) + 'px Consolas,monospace'
+          ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
+          ctx.fillStyle = scope.forceOB ? '#ffaa00' : '#a0aabe'
+          ctx.fillText('TURBO MAX ' + boostMax.toFixed(1) + ' PSI', BP.l + BGW - 4, limY - 2)
+          if (!scope.forceOB) {
+            ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+            ctx.fillStyle = 'rgba(160,170,190,0.55)'
+            ctx.fillText('above limit — enable OVERBOOST to reach', BP.l + 4, BP.t + 2)
+          }
+        }
+
         var steps=Math.max(Math.round(BGW/2),20),step=maxRPM/steps
         ctx.beginPath();ctx.moveTo(tx(0),ty(0))
         for(var i=0;i<=steps;i++)ctx.lineTo(tx(step*i),ty(lerpMap(step*i)))
@@ -913,12 +942,25 @@ angular.module('beamng.apps')
         var dr=cl(BMW2*0.008,3,7)
         for(var i=0;i<map.length;i++){
           var bx=tx(map[i][0]),by=ty(map[i][1]),hot=(i===hoverIdx||i===dragIdx)
+          // Mark dots that target above the turbo's hardware limit when
+          // OVERBOOST is off — the wastegate alone cannot deliver this.
+          var aboveLimit = boostMax > 0 && map[i][1] > boostMax && !scope.forceOB
           if(hot){ctx.beginPath();ctx.arc(bx,by,dr+6,0,6.283);ctx.fillStyle='rgba(255,102,0,0.08)';ctx.fill()}
           ctx.beginPath();ctx.arc(bx,by,dr+1,0,6.283);ctx.strokeStyle=hot?'#ff8833':'rgba(255,102,0,0.3)';ctx.lineWidth=1;ctx.stroke()
-          ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle=hot?'#ff8833':'#ff6600';ctx.fill()
+          ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle = aboveLimit ? '#888a96' : (hot ? '#ff8833' : '#ff6600'); ctx.fill()
           ctx.beginPath();ctx.arc(bx,by,dr*0.3,0,6.283);ctx.fillStyle='rgba(6,8,14,0.9)';ctx.fill()
-          if(hot){ctx.font='bold '+cl(g.fs+1,10,14).toFixed(0)+'px Consolas,monospace';ctx.fillStyle='#dde0ec';ctx.textAlign='center'
-            ctx.fillText(map[i][0]+' / '+map[i][1].toFixed(1)+' PSI',bx,by-dr-6)}
+          if (aboveLimit) {
+            ctx.font = 'bold ' + cl(BMW2*0.018, 9, 13).toFixed(0) + 'px sans-serif'
+            ctx.fillStyle = '#ffaa00'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText('!', bx + dr + 6, by)
+          }
+          if(hot){
+            ctx.font='bold '+cl(g.fs+1,10,14).toFixed(0)+'px Consolas,monospace'
+            ctx.fillStyle='#dde0ec'; ctx.textAlign='center'; ctx.textBaseline='alphabetic'
+            var tip = map[i][0]+' / '+map[i][1].toFixed(1)+' PSI'
+            if (aboveLimit) tip += '  (above turbo limit)'
+            ctx.fillText(tip, bx, by-dr-6)
+          }
         }
 
         if(!scope.active||rpm<50)return
@@ -950,10 +992,16 @@ angular.module('beamng.apps')
 
         if (useNative) {
           var step = 250
-          var refBoost = boostMax > 0 ? boostMax : 1
+          // MAP-based torque ratio (atmospheric ~14.7 PSI gauge → atmospheric MAP).
+          // Engine torque scales with MANIFOLD ABSOLUTE pressure, not gauge boost,
+          // so 0 PSI gauge ≠ 0 torque. See lua/.../fueltechBoostController.lua
+          // for the matching server-side formula.
+          var ATM_PSI = 14.7
+          var stockBoost = boostMax > 0 ? boostMax : 0
+          var stockMAP = ATM_PSI + (stockBoost > 0 ? stockBoost : 0)
           for (var r = 0; r <= eR; r += step) {
             var idx = Math.min(r, stockTorqueArr.length - 1)
-            var sNm = stockTorqueArr[idx] || 0       // stock torque in Nm
+            var sNm = stockTorqueArr[idx] || 0       // stock-with-OEM-boost torque (Nm)
             var sPkw = stockPowerArr ? (stockPowerArr[idx] || 0) : (sNm * r * 0.10471975 / 1000)
             var sHP = sPkw * 1.34102
 
@@ -963,12 +1011,13 @@ angular.module('beamng.apps')
             if (sNm > stockPkNm) stockPkNm = sNm
             if (sHP > stockPkHP) stockPkHP = sHP
 
-            // Projected curves: scale stock by our boost target / stock boost
+            // Projected: scale by ratio of target MAP to stock MAP
             var ourTarget = lerpMap(r)
-            var boostRatio = refBoost > 0 ? ourTarget / refBoost : 1
-            if (boostRatio < 0) boostRatio = 0
-            var pNm = sNm * boostRatio
-            var pHP = sHP * boostRatio
+            if (ourTarget < 0) ourTarget = 0
+            var targetMAP = ATM_PSI + ourTarget
+            var torqueRatio = stockMAP > 0 ? (targetMAP / stockMAP) : 1
+            var pNm = sNm * torqueRatio
+            var pHP = sHP * torqueRatio
 
             td.push({rpm: r, nm: pNm})
             pd.push({rpm: r, hp: pHP})
