@@ -15,15 +15,13 @@ Works with **turbocharged** and **supercharged** vehicles. On naturally aspirate
 
 ## Installation
 
-> ⚠️ **Most "doesn't show up" issues come from extracting the zip or skipping step 3.** Read each step.
+**v8.0.0 onward: zero Vehicle Config steps.** The mod auto-attaches to every spawned vehicle via a game-engine extension. Just drop the zip in `mods/` and add the dashboard.
 
 ### 1. Download the zip — DO NOT EXTRACT IT
 
 **[⬇ Click here to download `fueltech_boost_controller.zip`](https://github.com/nelitow/fueltech-boost-beamng/releases/latest/download/fueltech_boost_controller.zip)**
 
-(That link always serves the latest release.)
-
-Leave it as a `.zip` file. BeamNG loads zipped mods directly — extracting them is a common cause of broken installs.
+Leave it as a `.zip` file. BeamNG loads zipped mods directly — extracting is a common cause of broken installs.
 
 ### 2. Drop the zip in your BeamNG mods folder
 
@@ -36,34 +34,25 @@ Open File Explorer and paste **one** of these into the address bar (whichever ex
 %LocalAppData%\BeamNG.drive\<version>\mods
 ```
 
-(Most installs use the `Documents` one. The `LocalAppData` one is for Steam Cloud or portable setups.)
-
-If the `mods` folder doesn't exist, create it. Then **drop the .zip directly inside it**:
+If the `mods` folder doesn't exist, create it. Then drop the `.zip` directly inside it:
 
 ```
 mods/
-└── fueltech_boost_controller.zip      ← like this
+└── fueltech_boost_controller.zip
 ```
 
-**Do NOT** create an `unpacked` folder, **do NOT** extract the zip, **do NOT** rename it.
+**Do NOT** create an `unpacked` folder, **do NOT** extract, **do NOT** rename.
 
-### 3. ⚠️ Enable the part on your vehicle (most-skipped step)
+### 3. Restart BeamNG (or activate the mod from the in-game Mod Manager)
 
-The mod installs as an ECU part that uses the N2O system slot. You have to enable it once per vehicle:
-
-1. Spawn any **turbocharged or supercharged** car (most modern cars work — pickups, EVs, and race-prep cars often don't have a free N2O slot).
-2. Press **`Ctrl + W`** to open Vehicle Config.
-3. In the parts tree, find **"FuelTech Boost Controller"** under **Additional Modification**.
-4. Click to add it. Save the config if you want it to persist.
-
-If you skip this step, the dashboard will spawn but the boost controller won't attach — your car will blow past the limiter as if the mod weren't there.
+The boost + drivetrain controllers will auto-load on every vehicle from now on — turbo, supercharged, NA, modded — no Vehicle Config step needed.
 
 ### 4. Add the dashboard to your screen
 
-1. Press **Esc** → click **UI Apps** (bottom-left of the menu).
+1. Press **Esc** → click **UI Apps** (bottom-left).
 2. Search for **"FuelTech Dashboard"**.
-3. Click it once to drop it on screen.
-4. **Drag the edges** to resize. The dashboard fills whatever area you give it — small corner overlay or full-screen, your call.
+3. Click to drop it on screen.
+4. **Drag the edges** to resize.
 
 ### 5. Done
 
@@ -76,10 +65,10 @@ The dashboard auto-detects your vehicle:
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard doesn't appear in UI Apps | The zip is in the wrong folder. Check both paths in step 2. |
-| Dashboard appears but ACTIVE never lights up | You skipped step 3 (enable the part in Vehicle Config). |
-| "FuelTech Boost Controller" not in Vehicle Config | Your vehicle has no N2O slot, or another mod is using it. Try a different car. |
-| Wrong folder structure after extracting | Don't extract — see step 1. If you already did, delete the unpacked folder and restart at step 1. |
+| Dashboard doesn't appear in UI Apps | Zip is in the wrong folder. Check both paths in step 2. |
+| Dashboard shows but ACTIVE never lights up on a turbo car | The GE extension isn't loading. Restart BeamNG fully (close + reopen, not just main menu). |
+| Old saved configs still have a "FuelTech Boost Controller" part listed | Harmless — the legacy N2O-slot jbeam still ships for backwards compatibility. The auto-attach detects the duplicate and skips. |
+| Wrong folder structure after extracting | Don't extract — see step 1. Delete the unpacked folder and start over. |
 
 ---
 

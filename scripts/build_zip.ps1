@@ -35,7 +35,7 @@ if (Test-Path $out) { Remove-Item $out -Force }
 # Build the zip. Same recipe as .github/workflows/release.yml — keep them
 # in sync so the local zip and the GitHub release zip are byte-equivalent
 # (modulo timestamps).
-$includes = @("lua", "ui", "vehicles", "mod_info", "README.md")
+$includes = @("lua", "ui", "vehicles", "mod_info", "scripts", "README.md")
 $args = @("a", "-tzip", "-mx=9", "-bso0", "-bsp1", $out) + $includes
 & $sevenZip @args
 if ($LASTEXITCODE -ne 0) {
@@ -66,7 +66,7 @@ if ($badPaths) {
 
 # Sanity check structure: top-level entries must be lua/, ui/, vehicles/,
 # mod_info/, README.md — no wrapper folder.
-$expectedTop = @{ "lua" = $true; "ui" = $true; "vehicles" = $true; "mod_info" = $true; "README.md" = $true }
+$expectedTop = @{ "lua" = $true; "ui" = $true; "vehicles" = $true; "mod_info" = $true; "scripts" = $true; "README.md" = $true }
 $topLevels = $entryNames | ForEach-Object {
   $idx = $_.IndexOf("/")
   if ($idx -lt 0) { $_ } else { $_.Substring(0, $idx) }

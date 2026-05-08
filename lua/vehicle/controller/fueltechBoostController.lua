@@ -349,8 +349,17 @@ local function init(jbeamData)
   end
   table.sort(boostTable, function(a, b) return a[1] < b[1] end)
 
-  -- If all boost values are 0 (e.g. saved config wiped the defaults), apply safe defaults
-  if allZero and #boostTable > 0 then
+  -- Empty jbeamData (typical when the controller is loaded via the GE
+  -- auto-attach extension instead of the legacy n2o-slot jbeam part) —
+  -- seed a sensible default 6-point map. The user's autosave profile
+  -- will overwrite this a few lines later if one exists.
+  if #boostTable == 0 then
+    local defaultRPM   = {2000, 3000, 4000, 5000, 6000, 7000}
+    local defaultBoost = {5,    10,   15,   20,   20,   18}
+    for i = 1, 6 do boostTable[i] = {defaultRPM[i], defaultBoost[i]} end
+    log("I", "fueltechBoost", "No jbeam variables — seeded default boost map (auto-attach mode)")
+  elseif allZero then
+    -- Saved config wiped the defaults to 0 — restore them in place.
     local defaults = {5, 10, 15, 20, 20, 18}
     for i = 1, math.min(#boostTable, #defaults) do
       boostTable[i][2] = defaults[i]

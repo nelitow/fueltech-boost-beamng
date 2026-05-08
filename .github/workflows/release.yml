@@ -74,6 +74,7 @@ jobs:
             ui/ \
             vehicles/ \
             mod_info/ \
+            scripts/ \
             README.md \
             -x "*.git*"
 
