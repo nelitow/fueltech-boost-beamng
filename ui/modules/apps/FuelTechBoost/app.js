@@ -93,7 +93,7 @@ angular.module('beamng.apps')
       scope.dmodes = []
       scope.forceOB = false
       scope.hasTCS = false
-      scope.tcsActive = true
+      scope.tcsActive = false  // matches lua default (custom TCS off by default in v8.1.0+)
       scope.tcsCut = 0  // 0-1, how much throttle is being cut
       scope.hasABS = false
       scope.absActive = true
@@ -422,25 +422,23 @@ angular.module('beamng.apps')
       }
 
       /* ==================== LAYOUT ==================== */
-      /*  Clear-view layout — gauges hug the edges, the middle is transparent
-       *  so the player can see the car. ~66% width × ~70% height stays clear.
+      /*  v8.1.0 minimal-overlap layout. Users disliked duplicating BeamNG's
+       *  stock RPM / speedo / gear / boost gauges, so those are gone. This
+       *  app now only renders things stock BeamNG doesn't already show:
+       *  fueltech-specific telemetry, the mini boost-map preview, the
+       *  control bar (presets + OVERBOOST + ALS + TC + ABS), warnings and
+       *  damage log.
        *
-       *  ┌─ HEADER ─────────────────────────────────────────┐  3.5%
-       *  ├─ TELEM STRIP ────────────────────────────────────┤  2.8%
-       *  │ RPM       │                              │ BOOST │
-       *  │ GAUGE     │                              │       │  ~70%
-       *  │ (cols 1-2)│   ── transparent center ──   │ (11-12)
-       *  ├───────────┤      (see the car here)      ├───────┤
-       *  │ SPEED     │                              │ TURBO │
-       *  │ + GEAR    │                              │ RPM   │
-       *  ├───────────┴──────────────────────────────┴───────┤
-       *  │ OIL │ H2O │ THR │ G-FORCE │ DRAG TIMER           │  ~10%
-       *  ├──────────────────────────────────────────────────┤
-       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC]  │  3.5%
-       *  └──────────────────────────────────────────────────┘
-       *
-       *  NA cars: right band hides Boost + Turbo RPM.
-       *  Supercharger: right band shows Boost full-height (no Turbo RPM).
+       *  ┌─ HEADER (FUELTECH / BOOST-PK / TUNE button / version) ────┐ 3.5%
+       *  ├─ TELEM STRIP (WT / LOAD / FUEL / EXH / CLT / ALT / ODO) ─┤ 2.8%
+       *  │                                                          │
+       *  │            ── transparent center (see the car) ──        │ ~70%
+       *  │                                                          │
+       *  ├──────────────────────────────────────────────────────────┤
+       *  │ OIL │ H2O │ MINI-BOOST-MAP │ G-FORCE │ DRAG │ DT-MODES   │ ~10%
+       *  ├──────────────────────────────────────────────────────────┤
+       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC][ABS]     │ ~4%
+       *  └──────────────────────────────────────────────────────────┘
        */
       var GAP = 4
       var appW = 0, appH = 0
@@ -514,49 +512,47 @@ angular.module('beamng.apps')
           dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(sideY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
-        // ── Side gauges ──
-        // LEFT band (cols 1-2): RPM (top ~62%) + Speed/Gear (bottom ~38%)
-        // RIGHT band (cols 11-12): Boost (top) + Turbo RPM (bottom) — turbo only
-        // Middle (cols 3-10) stays transparent → 66% horizontal clear zone
-        var sideCols = 2
-        var rpmH = Math.round(sideH * 0.62)
-        var spdH = sideH - rpmH - G
-
-        box(q('.ft-c-rpm'), 1, sideCols, sideY, rpmH)
-        box(q('.ft-c-spd'), 1, sideCols, sideY + rpmH + G, spdH,
-          'display:flex;flex-direction:column;align-items:center;justify-content:center')
-
-        var bstH, trbH
-        if (hasTurbo) {
-          var bstEl = q('.ft-c-bst')
-          var trbEl = q('.ft-c-trb')
-          if (hasTurboRpm) {
-            // Boost top 62%, Turbo RPM bottom 38% — right band
-            bstH = Math.round(sideH * 0.62)
-            trbH = sideH - bstH - G
-            box(bstEl, 11, sideCols, sideY, bstH)
-            box(trbEl, 11, sideCols, sideY + bstH + G, trbH)
-          } else {
-            // Supercharger: boost full height in right band
-            bstH = sideH
-            trbH = 0
-            box(bstEl, 11, sideCols, sideY, sideH)
-            if (trbEl) trbEl.style.display = 'none'
-          }
-        } else {
-          bstH = 0; trbH = 0
-          var bstEl2 = q('.ft-c-bst'); if (bstEl2) bstEl2.style.display = 'none'
-          var trbEl2 = q('.ft-c-trb'); if (trbEl2) trbEl2.style.display = 'none'
+        // ── Side gauges: removed in v8.1.0 ──
+        // RPM, boost PSI, turbo-RPM, speedometer, and gear display all live
+        // in BeamNG's stock UI Apps now. Forcibly hide their cells so any
+        // stale CSS / leftover HTML doesn't show up.
+        var stale = ['.ft-c-rpm', '.ft-c-bst', '.ft-c-trb', '.ft-c-spd']
+        for (var si = 0; si < stale.length; si++) {
+          var sel = stale[si]; var el = q(sel)
+          if (el) el.style.display = 'none'
         }
 
         // ── Secondary row (bottom band, just above control bar) ──
-        // Oil + Water + Throttle + G-force + Drag timer
-        box(q('.ft-c-oil'), 1, 3, secY, secH)
-        box(q('.ft-c-h2o'), 4, 3, secY, secH)
-        box(q('.ft-c-thr'), 7, 2, secY, secH)
-        box(q('.ft-c-gforce'), 9, 2, secY, secH)
-        box(q('.ft-c-drag'), 11, 2, secY, secH,
-          'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
+        // Two-temp gauges + mini boost-map preview + G-force + drag timer.
+        // Optional drivetrain-toggles cell stacks alongside if the vehicle
+        // has any auto-detected diff / range / AWD modes.
+        var dtEl = q('.ft-c-dt')
+        var showDt = dtEl && dtEl.children && dtEl.children.length > 0
+        var miniMapCols, dragCols, dtCols
+        if (hasTurbo) {
+          // With boost map preview: 2 + 2 + 3 + 2 + 2 + 1 (dt if present)
+          miniMapCols = 3; dragCols = 2; dtCols = showDt ? 1 : 0
+          box(q('.ft-c-oil'),     1, 2, secY, secH)
+          box(q('.ft-c-h2o'),     3, 2, secY, secH)
+          box(q('.ft-c-minimap'), 5, miniMapCols, secY, secH, GRAPH_BG)
+          box(q('.ft-c-gforce'),  5 + miniMapCols, 2, secY, secH)
+          box(q('.ft-c-drag'),    5 + miniMapCols + 2, dragCols, secY, secH,
+            'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
+          if (showDt) box(dtEl,   12, dtCols, secY, secH)
+          else if (dtEl) dtEl.style.display = 'none'
+        } else {
+          // NA cars — no mini boost map. Widen the temps and G-force.
+          var mEl = q('.ft-c-minimap'); if (mEl) mEl.style.display = 'none'
+          box(q('.ft-c-oil'),    1, 3, secY, secH)
+          box(q('.ft-c-h2o'),    4, 3, secY, secH)
+          box(q('.ft-c-gforce'), 7, 3, secY, secH)
+          box(q('.ft-c-drag'),  10, 3, secY, secH,
+            'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
+          if (showDt) {
+            // No room in the secondary row; float over the cleared centre area instead
+            dtEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:5;left:'+G+'px;top:'+sideY+'px;width:'+usableW+'px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:6px;pointer-events:auto'
+          } else if (dtEl) dtEl.style.display = 'none'
+        }
 
         // ── TUNE overlay (compact centered panel, on-demand) ──
         // Holds the interactive boost map + power curve. Only positioned
@@ -613,20 +609,21 @@ angular.module('beamng.apps')
 
         // ── Build lay object for canvas sizing ──
         var col2W = cw2(2), col3W = cw2(3), col6W = cw2(6)
-        var sideW = cw2(sideCols)
 
         lay = {
-          gaugeW: sideW, gaugeH: rpmH,
-          bstW: sideW, bstH: bstH || sideH,
-          trbW: sideW, trbH: trbH || sideH,
-          oilW: col3W, oilH: secH,
-          h2oW: col3W, h2oH: secH,
-          thrW: col2W, thrH: secH,
+          // Main gauges removed in v8.1.0 — zeros so any stale drawAll
+          // calls no-op rather than throw on undefined dims.
+          gaugeW: 0, gaugeH: 0,
+          bstW: 0, bstH: 0,
+          trbW: 0, trbH: 0,
+          oilW: hasTurbo ? col2W : col3W, oilH: secH,
+          h2oW: hasTurbo ? col2W : col3W, h2oH: secH,
+          miniW: hasTurbo ? cw2(3) : 0, miniH: secH,
+          gfW:  hasTurbo ? col2W : col3W, gfH: secH,
           // Boost map + power curve get real sizes only when the TUNE panel
           // is open; otherwise they're hidden and never drawn.
           graphW: tuneMapW, graphH: tuneMapH,
-          pwrW: tunePwrW,
-          gfW: col2W, gfH: secH
+          pwrW: tunePwrW
         }
         return lay
       }
@@ -641,6 +638,7 @@ angular.module('beamng.apps')
       var cvsThr = null, ctxThr = null
       var cvsTrb = null, ctxTrb = null
       var cvsGf = null, ctxGf = null
+      var cvsMini = null, ctxMini = null
       var dpr = window.devicePixelRatio || 1
 
       function initCanvases () {
@@ -651,6 +649,7 @@ angular.module('beamng.apps')
         if (!cvsThr) { try { cvsThr = q('.ft-cv-thr'); if (cvsThr) ctxThr = cvsThr.getContext('2d') } catch(e){} }
         if (!cvsTrb) { try { cvsTrb = q('.ft-cv-trb'); if (cvsTrb) ctxTrb = cvsTrb.getContext('2d') } catch(e){} }
         if (!cvsGf) { try { cvsGf = q('.ft-cv-gforce'); if (cvsGf) ctxGf = cvsGf.getContext('2d') } catch(e){} }
+        if (!cvsMini) { try { cvsMini = q('.ft-cv-minimap'); if (cvsMini) ctxMini = cvsMini.getContext('2d') } catch(e){} }
         if (!cvsMap) {
           try { cvsMap = q('.ft-cv-map'); if (cvsMap) { ctxMap = cvsMap.getContext('2d')
             cvsMap.addEventListener('mousedown', onDown); cvsMap.addEventListener('mousemove', onMove)
@@ -884,6 +883,65 @@ angular.module('beamng.apps')
         ctx.textAlign='center'
         for(var i=0;i<=nX;i++){var rv=maxX/nX*i;ctx.fillText(rv>=1000?(rv/1000).toFixed(0)+'k':'0',p.l+gw/nX*i,h-p.b+fs+2)}
         return {p:p,gw:gw,gh:gh,fs:fs}
+      }
+
+      /* ==================== MINI BOOST MAP (always-visible preview) ==================== */
+      // Compact at-a-glance render of the current boost curve in the bottom
+      // strip. No grid, no labels, no axis numbers — just the curve, the
+      // live RPM cursor, and a "TURBO MAX" baseline. Designed to be readable
+      // at ~80 × 60 px without becoming illegible at ~200 × 80 px.
+      function drawMiniBoostMap () {
+        initCanvases(); if (!ctxMini || !lay) return
+        if (!lay.miniW || lay.miniW < 40) return
+        var sz = sizeCvs(cvsMini, lay.miniW, lay.miniH); if (!sz) return
+        var w = sz.w, h = sz.h, ctx = ctxMini
+        var pad = 4
+        var pw = w - pad * 2, ph = h - pad * 2
+        // Y-scale: include any user-set point above turbo max so the curve
+        // doesn't clip. Always at least boostMax * 1.1 so we have headroom.
+        var yMax = boostMax > 0 ? boostMax * 1.1 : 30
+        for (var i = 0; i < map.length; i++) if (map[i][1] > yMax) yMax = map[i][1] * 1.05
+        function mx(r) { return pad + cl(r / maxRPM, 0, 1) * pw }
+        function my(v) { return pad + ph - cl(v / yMax, 0, 1) * ph }
+
+        // Faint turbo-max baseline so users see the hardware ceiling.
+        if (boostMax > 0 && boostMax < yMax) {
+          var ly = my(boostMax)
+          ctx.strokeStyle = 'rgba(160,170,190,0.35)'
+          ctx.setLineDash([3, 3]); ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(pad, ly); ctx.lineTo(pad + pw, ly); ctx.stroke()
+          ctx.setLineDash([])
+        }
+
+        // Boost curve filled area
+        var steps = 32, stepRpm = maxRPM / steps
+        ctx.beginPath(); ctx.moveTo(mx(0), my(0))
+        for (var s = 0; s <= steps; s++) ctx.lineTo(mx(stepRpm * s), my(lerpMap(stepRpm * s)))
+        ctx.lineTo(mx(maxRPM), my(0)); ctx.closePath()
+        var grad = ctx.createLinearGradient(0, pad, 0, pad + ph)
+        grad.addColorStop(0, 'rgba(255,102,0,0.32)')
+        grad.addColorStop(1, 'rgba(255,102,0,0.02)')
+        ctx.fillStyle = grad; ctx.fill()
+        // Curve outline
+        ctx.beginPath(); ctx.moveTo(mx(0), my(lerpMap(0)))
+        for (var s2 = 1; s2 <= steps; s2++) ctx.lineTo(mx(stepRpm * s2), my(lerpMap(stepRpm * s2)))
+        ctx.strokeStyle = '#ff8833'; ctx.lineWidth = 1.5
+        ctx.lineJoin = 'round'; ctx.stroke()
+
+        // Live RPM cursor + current boost dot
+        if (scope.active && rpm > 50) {
+          var cxp = cl(mx(rpm), pad, pad + pw)
+          ctx.strokeStyle = 'rgba(0,187,255,0.5)'; ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(cxp, pad); ctx.lineTo(cxp, pad + ph); ctx.stroke()
+          var cyp = cl(my(boost), pad, pad + ph)
+          ctx.fillStyle = scope.overboost ? '#ff2244' : '#00bbff'
+          ctx.beginPath(); ctx.arc(cxp, cyp, 3, 0, 6.283); ctx.fill()
+        }
+
+        // Tiny "BOOST" label top-left
+        ctx.font = 'bold 9px Consolas,monospace'
+        ctx.fillStyle = 'rgba(180,190,210,0.55)'; ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+        ctx.fillText('BOOST MAP', pad + 2, pad + 1)
       }
 
       /* ==================== BOOST MAP ==================== */
@@ -1226,8 +1284,10 @@ angular.module('beamng.apps')
       }, 200)
 
       function drawAll () {
-        drawRpmGauge(); drawOilH2oGauges(); drawThrTrbGauges(); drawGForce()
-        if (hasTurbo) { drawBoostGauge(); if (hasTurboRpm) drawTurboRpmGauge() }
+        // v8.1.0: RPM, boost PSI, turbo-RPM, speed/gear all live in
+        // BeamNG's stock UI Apps now. Only draw the FuelTech-unique stuff.
+        drawOilH2oGauges(); drawGForce()
+        if (hasTurbo) { drawMiniBoostMap() }
         // Boost map + power curve only render when the TUNE overlay is open
         if (hasTurbo && scope.tuneOpen) { drawBoostMap(); drawPower() }
       }

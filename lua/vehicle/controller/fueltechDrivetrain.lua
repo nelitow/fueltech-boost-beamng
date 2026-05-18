@@ -14,7 +14,7 @@ local scanTimer = 0
 
 -- Custom TCS state
 local hasNativeTCS = false
-local customTCSEnabled = true     -- user toggle
+local customTCSEnabled = false    -- user toggle — default OFF (user opt-in)
 local customTCSIntervening = false
 local tcsThrottleMul = 1.0
 
@@ -141,17 +141,19 @@ local function scanDrivetrain()
     end
   end
 
-  -- If no native TCS, register our custom TCS as a drive mode
+  -- If no native TCS, register our custom TCS as a drive mode. Default OFF
+  -- because users on cars without native TCS often want raw driving (drift,
+  -- drag, etc.) — toggle on demand via the TC button in the control bar.
   if not hasNativeTCS then
     table.insert(driveModes, {
       name = "tcs",
       label = "TC",
       electricsKey = "tcs",
-      active = true,
+      active = false,
       custom = true
     })
-    customTCSEnabled = true
-    log("I", "fueltechDT", "No native TCS found — custom traction control enabled")
+    customTCSEnabled = false
+    log("I", "fueltechDT", "No native TCS found — custom traction control registered (off by default)")
   end
 
   log("I", "fueltechDT", "Drivetrain scan: " .. #features .. " switchable features, " .. #driveModes .. " drive modes")
@@ -323,7 +325,7 @@ local function init(jbeamData)
   features = {}
   driveModes = {}
   hasNativeTCS = false
-  customTCSEnabled = true
+  customTCSEnabled = false
   customTCSIntervening = false
   tcsThrottleMul = 1.0
 end

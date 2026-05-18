@@ -670,10 +670,18 @@ local function setPreset(name)
     boostTable = {}
     for i, r in ipairs(rpmPoints) do boostTable[i] = {r, 0} end
   elseif name == "MAX" then
-    local maxVal = electrics.values.turboBoostMax or electrics.values.boostMax or 40
-    if maxVal <= 0 then maxVal = 40 end
+    -- MAX = hardware turbo limit + ~30% overboost margin. Always exceeds
+    -- boostMax, so OVERBOOST is auto-enabled here — without it the
+    -- controller's runtime clamp would silently cap delivery back to
+    -- the hardware limit, defeating the preset's intent.
+    local hwMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
+    if hwMax <= 0 then hwMax = 20 end
+    local maxVal = math.max(hwMax * 1.3, hwMax + 5)
     boostTable = {}
     for i, r in ipairs(rpmPoints) do boostTable[i] = {r, maxVal} end
+    forceOverboost = true
+    electrics.values.fueltech_forceOB = 1
+    log("I", "fueltechBoost", string.format("MAX preset: %.1f PSI per RPM, overboost auto-enabled (hw limit %.1f)", maxVal, hwMax))
   elseif name == "STOCK" then
     local sv = stockBoostMax > 0 and stockBoostMax or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
     if sv <= 0 then sv = 14 end

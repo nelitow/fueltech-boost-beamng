@@ -7,13 +7,11 @@
     <span style="flex:1"></span>
     <span class="ft-peak" ng-if="hasTurbo" ng-click="resetPeak()">BOOST PK {{peakStr}}</span>
     <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
-    <span class="ft-peak" ng-click="resetPeakRpm()">RPM PK {{peakRpmStr}}</span>
-    <span class="ft-hdr-sep">|</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
-    <span class="ft-toggle" ng-if="hasTurbo" ng-click="toggleTune()"
-          ng-style="tuneOpen && {'color':'#ff8800','border-color':'#ff8800'}">{{tuneOpen?'CLOSE':'TUNE'}}</span>
-    <span class="ft-ver">8.0.1</span>
+    <span class="ft-toggle ft-tune-btn" ng-if="hasTurbo" ng-click="toggleTune()"
+          ng-class="{'ft-tune-btn-on': tuneOpen}">{{tuneOpen?'✕ CLOSE':'⚙ TUNE BOOST MAP'}}</span>
+    <span class="ft-ver">8.1.0</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->
@@ -21,17 +19,17 @@
     <span class="ft-warn-item ft-blink" ng-repeat="w in warnings">{{w}}</span>
   </div>
 
-  <!-- Telemetry strip -->
+  <!-- Telemetry strip — fixed-width values so the row doesn't reflow as numbers change -->
   <div class="ft-telem">
-    <span class="ft-telem-item">WT <b>{{weightStr}}kg</b></span>
-    <span class="ft-telem-item">LOAD <b>{{loadStr}}%</b></span>
-    <span class="ft-telem-item">FUEL <b>{{fuelStr}}L</b></span>
-    <span class="ft-telem-item">EXH <b>{{exhFlowStr}}</b></span>
-    <span class="ft-telem-item">CLT <b>{{clutchStr}}%</b></span>
-    <span class="ft-telem-item">ALT <b>{{altStr}}m</b></span>
-    <span class="ft-telem-item">ODO <b>{{odoStr}}km</b></span>
+    <span class="ft-telem-item">WT <b class="ft-num4">{{weightStr}}</b>kg</span>
+    <span class="ft-telem-item">LOAD <b class="ft-num3">{{loadStr}}</b>%</span>
+    <span class="ft-telem-item">FUEL <b class="ft-num3">{{fuelStr}}</b>L</span>
+    <span class="ft-telem-item">EXH <b class="ft-num3">{{exhFlowStr}}</b></span>
+    <span class="ft-telem-item">CLT <b class="ft-num3">{{clutchStr}}</b>%</span>
+    <span class="ft-telem-item">ALT <b class="ft-num4">{{altStr}}</b>m</span>
+    <span class="ft-telem-item">ODO <b class="ft-num4">{{odoStr}}</b>km</span>
     <span class="ft-telem-item" ng-if="brakeTemps.length">BRK
-      <b ng-repeat="bt in brakeTemps" ng-style="{'color': bt.color}">{{bt.val}}</b></span>
+      <b ng-repeat="bt in brakeTemps" ng-style="{'color': bt.color}" class="ft-num3">{{bt.val}}</b></span>
     <span class="ft-telem-cel ft-blink" ng-if="cel">CEL</span>
     <span class="ft-telem-fuel ft-blink" ng-if="lowFuel">LOW FUEL</span>
   </div>
@@ -44,36 +42,26 @@
   <!-- Shift light overlay -->
   <div class="ft-shift" ng-if="shiftLight" ng-class="{'ft-shift-on': shiftLight}"></div>
 
-  <!-- Main gauges -->
-  <div class="ft-cell ft-c-rpm"><canvas class="ft-cv ft-cv-rpm"></canvas></div>
-  <div class="ft-cell ft-c-bst"><canvas class="ft-cv ft-cv-bst"></canvas></div>
-  <div class="ft-cell ft-c-trb"><canvas class="ft-cv ft-cv-trb"></canvas></div>
-
-  <!-- Speed + Gear (center hero) -->
-  <div class="ft-cell ft-c-spd">
-    <div class="ft-spd">{{speedStr}}</div>
-    <div class="ft-spd-u">KM/H</div>
-    <div style="margin-top:4px;display:flex;align-items:baseline;gap:6px">
-      <span class="ft-gear-l">GEAR</span>
-      <span class="ft-gear-v" ng-class="{'ft-shift-gear': shiftLight}">{{gearStr}}</span>
-    </div>
-    <div class="ft-gear-mode" ng-if="gearModeStr">{{gearModeStr}}</div>
-    <div class="ft-dt" ng-if="dtFeatures.length || dmodes.length">
-      <span class="ft-dt-btn" ng-repeat="f in dtFeatures"
-            ng-click="toggleDt(f)" ng-class="{'ft-dt-on': f.active}">
-        {{f.label}}: {{f.modeLabel}}
-      </span>
-      <span class="ft-dt-btn" ng-repeat="dm in dmodes" ng-if="dm.name !== 'tcs' && dm.name !== 'absController'"
-            ng-click="toggleDm(dm)" ng-class="{'ft-dt-on': dm.active}">
-        {{dm.label}}
-      </span>
-    </div>
+  <!-- Drivetrain mode toggles (auto-detected diff lock, range, AWD modes).
+       Stays visible — these are not duplicated by stock BeamNG widgets. -->
+  <div class="ft-cell ft-c-dt" ng-if="dtFeatures.length || dmodes.length">
+    <span class="ft-dt-btn" ng-repeat="f in dtFeatures"
+          ng-click="toggleDt(f)" ng-class="{'ft-dt-on': f.active}">
+      {{f.label}}: {{f.modeLabel}}
+    </span>
+    <span class="ft-dt-btn" ng-repeat="dm in dmodes" ng-if="dm.name !== 'tcs' && dm.name !== 'absController'"
+          ng-click="toggleDm(dm)" ng-class="{'ft-dt-on': dm.active}">
+      {{dm.label}}
+    </span>
   </div>
 
-  <!-- Mini gauges row -->
+  <!-- Mini gauges row (bottom band) -->
   <div class="ft-cell ft-c-oil"><canvas class="ft-cv ft-cv-oil"></canvas></div>
   <div class="ft-cell ft-c-h2o"><canvas class="ft-cv ft-cv-h2o"></canvas></div>
-  <div class="ft-cell ft-c-thr"><canvas class="ft-cv ft-cv-thr"></canvas></div>
+  <!-- Mini boost-map preview: replaces throttle in the bottom row. Shows the
+       current boost curve at a glance with the live RPM cursor, so users see
+       what's tuned without opening the TUNE overlay. -->
+  <div class="ft-cell ft-c-minimap" ng-if="hasTurbo"><canvas class="ft-cv ft-cv-minimap"></canvas></div>
   <div class="ft-cell ft-c-gforce"><canvas class="ft-cv ft-cv-gforce"></canvas></div>
 
   <!-- Drag timer (always visible) -->
@@ -81,11 +69,11 @@
     <div class="ft-drag-title">DRAG TIMER</div>
     <div class="ft-drag-row">
       <span class="ft-drag-label">0-100</span>
-      <span class="ft-drag-time" ng-class="{'ft-drag-done': drag100done}">{{drag100str}}</span>
+      <span class="ft-drag-time ft-num6" ng-class="{'ft-drag-done': drag100done}">{{drag100str}}</span>
     </div>
     <div class="ft-drag-row">
       <span class="ft-drag-label">0-200</span>
-      <span class="ft-drag-time" ng-class="{'ft-drag-done': drag200done}">{{drag200str}}</span>
+      <span class="ft-drag-time ft-num6" ng-class="{'ft-drag-done': drag200done}">{{drag200str}}</span>
     </div>
     <div class="ft-drag-reset" ng-click="resetDrag()">RESET</div>
   </div>
@@ -109,10 +97,18 @@
     <span class="ft-btn" ng-if="hasTurbo" ng-class="{'ft-btn-on':preset==='MAX'}" ng-click="setPreset('MAX')">MAX</span>
     <span class="ft-btn" ng-if="hasTurbo" ng-class="{'ft-btn-on':preset==='AUTOMAX'}" ng-click="setPreset('AUTOMAX')">AUTO MAX</span>
     <span class="ft-btn" ng-if="hasTurbo" ng-class="{'ft-btn-on':preset==='CUSTOM'}" ng-click="setPreset('CUSTOM')">CUSTOM</span>
-    <span class="ft-btn" ng-if="hasTurbo" ng-click="toggleForceOB()"
-          ng-style="forceOB && {'color':'#ff2244','border-color':'#ff2244','background':'rgba(30,8,10,0.9)'}">OVERBOOST</span>
+    <span class="ft-btn ft-btn-ob" ng-if="hasTurbo" ng-click="toggleForceOB()"
+          ng-class="{'ft-btn-ob-on': forceOB}"
+          title="OVERBOOST — bypass the turbo's hardware max boost limit. The wastegate stays shut past the rated boostMax, letting boost climb above what the turbo is designed to deliver. Useful for short bursts; sustained use damages the turbo.">
+      <span class="ft-btn-main">OVERBOOST</span>
+      <span class="ft-btn-sub">BYPASS LIMIT</span>
+    </span>
     <span class="ft-btn ft-btn-als" ng-if="hasTurbo" ng-click="toggleALS()"
-          ng-class="{'ft-btn-als-on': alsActive, 'ft-btn-als-firing': alsFiring}">ALS</span>
+          ng-class="{'ft-btn-als-on': alsActive, 'ft-btn-als-firing': alsFiring}"
+          title="ANTI-LAG — keeps the turbo spooled when off-throttle by holding the wastegate shut and feeding small throttle pulses, so boost is ready instantly when you accelerate again. Modeled after rally-car ALS.">
+      <span class="ft-btn-main">ANTI-LAG</span>
+      <span class="ft-btn-sub">ALS</span>
+    </span>
     <span class="ft-btn ft-btn-tc" ng-if="hasTCS" ng-click="toggleTC()"
           ng-class="{'ft-btn-tc-on': tcsActive && tcsCut < 0.05, 'ft-btn-tc-off': !tcsActive, 'ft-btn-tc-active': tcsActive && tcsCut >= 0.05}">TC</span>
     <span class="ft-btn ft-btn-abs" ng-if="hasABS" ng-click="toggleABS()"

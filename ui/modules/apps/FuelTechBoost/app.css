@@ -51,6 +51,27 @@
 }
 .ft-toggle:hover { color: #ff6600; border-color: rgba(255, 102, 0, 0.6); }
 
+/* TUNE button — pill style, accent colour, so it's the obvious action.
+   Toggles to a closed-state look when the overlay is open. */
+.ft-tune-btn {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff8800;
+  border: 1px solid rgba(255, 136, 0, 0.6);
+  background: rgba(255, 136, 0, 0.10);
+  padding: 3px 10px;
+  border-radius: 12px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ft-tune-btn:hover { background: rgba(255, 136, 0, 0.20); color: #ffaa44; }
+.ft-tune-btn-on   { color: #ddd; border-color: rgba(220, 220, 220, 0.55); background: rgba(40, 44, 56, 0.6); }
+
+/* Fixed-width numeric cells in the telemetry strip. Without these, the row
+   reflows every time a value crosses a digit-count boundary (0 → 100). */
+.ft-num3 { display: inline-block; min-width: 2.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+.ft-num4 { display: inline-block; min-width: 3.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+.ft-num6 { display: inline-block; min-width: 5.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* TUNE overlay — compact, centered. Backdrop catches outside-clicks to close. */
 .ft-tune-backdrop {
   position: absolute;
@@ -209,6 +230,30 @@
   box-shadow: 0 0 12px rgba(255,34,68,0.2);
 }
 
+/* Two-line buttons (OVERBOOST, ANTI-LAG): main label on top, smaller
+   clarifying subtitle below so users know what the control does. */
+.ft-btn-ob, .ft-btn-als {
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+  height: 34px;
+}
+.ft-btn .ft-btn-main { font-size: 11px; letter-spacing: 1px; }
+.ft-btn .ft-btn-sub  { font-size: 8px;  letter-spacing: 1.5px; opacity: 0.6; margin-top: 1px; }
+
+/* OVERBOOST off → muted; on → dramatic red with pulse glow. */
+.ft-btn-ob {
+  color: #99a;
+  border-color: rgba(140, 150, 170, 0.4);
+}
+.ft-btn-ob-on {
+  color: #ff2244 !important;
+  border-color: #ff2244 !important;
+  background: rgba(30, 8, 10, 0.92) !important;
+  box-shadow: 0 0 14px rgba(255, 34, 68, 0.35);
+}
+.ft-btn-ob-on .ft-btn-sub { opacity: 0.85; color: #ff8899; }
+
 /* Drivetrain selectors */
 .ft-dt {
   display: flex;
@@ -216,6 +261,18 @@
   margin-top: 6px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* Drivetrain-toggles container (positioned by doLayout in the bottom band).
+   These survived the gauge purge because they're FuelTech-unique (diff
+   lock / range / AWD modes — not in stock BeamNG widgets). */
+.ft-c-dt {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 6px;
+  flex-wrap: wrap;
 }
 
 .ft-dt-btn {
