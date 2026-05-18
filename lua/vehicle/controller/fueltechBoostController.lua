@@ -20,9 +20,6 @@ local boostTable = {}
 local boostByGear = false
 local gearMultipliers = {0.5, 0.65, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0}
 
--- Force overboost: bypass boostMax clamp
-local forceOverboost = false
-
 -- Anti-lag system (ALS)
 local alsEnabled = false       -- user toggle
 local alsFiring = false        -- currently firing (off-throttle, keeping turbo spooled)
@@ -163,13 +160,9 @@ local function updateGFX(dt)
   local gearMul = getGearMultiplier()
   targetPSI = targetPSI * gearMul
 
-  -- Read the hardware max boost
+  -- Read the hardware max boost (used by the UI as an informational
+  -- baseline, not as a clamp — v8.1.1+ always honours the user's target).
   local turboMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
-
-  -- Clamp target to hardware max (unless force overboost is on)
-  if not forceOverboost and turboMax > 0 and targetPSI > turboMax then
-    targetPSI = turboMax
-  end
 
   local actualBoost = electrics.values.turboBoost or electrics.values.boost or 0
 
@@ -189,7 +182,6 @@ local function updateGFX(dt)
   -- Publish state for UI
   electrics.values.fueltech_boostMax = turboMax
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
-  electrics.values.fueltech_forceOB = forceOverboost and 1 or 0
 
   -- Total vehicle mass (kg) — published for the dashboard top bar.
   -- Cached and refreshed once per second (mass only changes with damage,
@@ -447,11 +439,6 @@ local function toggleBoostByGear()
   })
 end
 
-local function toggleForceOverboost()
-  forceOverboost = not forceOverboost
-  log("I", "fueltechBoost", "Force overboost: " .. tostring(forceOverboost))
-end
-
 local function toggleAntiLag()
   alsEnabled = not alsEnabled
   if not alsEnabled then
@@ -670,18 +657,15 @@ local function setPreset(name)
     boostTable = {}
     for i, r in ipairs(rpmPoints) do boostTable[i] = {r, 0} end
   elseif name == "MAX" then
-    -- MAX = hardware turbo limit + ~30% overboost margin. Always exceeds
-    -- boostMax, so OVERBOOST is auto-enabled here — without it the
-    -- controller's runtime clamp would silently cap delivery back to
-    -- the hardware limit, defeating the preset's intent.
+    -- MAX = hardware turbo limit + ~30% margin. The controller no longer
+    -- clamps to boostMax (v8.1.1+), so this value is honoured directly —
+    -- the user gets exactly what the preset advertises.
     local hwMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
     if hwMax <= 0 then hwMax = 20 end
     local maxVal = math.max(hwMax * 1.3, hwMax + 5)
     boostTable = {}
     for i, r in ipairs(rpmPoints) do boostTable[i] = {r, maxVal} end
-    forceOverboost = true
-    electrics.values.fueltech_forceOB = 1
-    log("I", "fueltechBoost", string.format("MAX preset: %.1f PSI per RPM, overboost auto-enabled (hw limit %.1f)", maxVal, hwMax))
+    log("I", "fueltechBoost", string.format("MAX preset: %.1f PSI per RPM (hw rated max %.1f)", maxVal, hwMax))
   elseif name == "STOCK" then
     local sv = stockBoostMax > 0 and stockBoostMax or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
     if sv <= 0 then sv = 14 end
@@ -774,7 +758,6 @@ M.sendPowerCurves = sendPowerCurves
 M.setPreset = setPreset
 M.autoMax = autoMax
 M.toggleBoostByGear = toggleBoostByGear
-M.toggleForceOverboost = toggleForceOverboost
 M.toggleAntiLag = toggleAntiLag
 M.setGearMultiplier = setGearMultiplier
 M.getBoostByGearInfo = getBoostByGearInfo

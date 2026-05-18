@@ -84,14 +84,13 @@ angular.module('beamng.apps')
       var detectFrames = 0, detectDone = false
 
       scope.hasTurbo = false
-      scope.active = false; scope.overboost = false
+      scope.active = false
       scope.rpmStr = '0'; scope.boostStr = '0.0'; scope.tgtStr = '0.0'; scope.peakStr = '0.0'
       scope.peakRpmStr = '0'
       scope.speedStr = '0'; scope.gearStr = 'N'; scope.gearModeStr = ''
       scope.preset = 'CUSTOM'
       scope.dtFeatures = []
       scope.dmodes = []
-      scope.forceOB = false
       scope.hasTCS = false
       scope.tcsActive = false  // matches lua default (custom TCS off by default in v8.1.0+)
       scope.tcsCut = 0  // 0-1, how much throttle is being cut
@@ -320,10 +319,6 @@ angular.module('beamng.apps')
       scope.toggleDm = function (dm) {
         dm.active = !dm.active
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("' + dm.name + '")') } catch(e) {}
-      }
-      scope.toggleForceOB = function () {
-        scope.forceOB = !scope.forceOB
-        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleForceOverboost()') } catch(e) {}
       }
       // Debounce flags — prevent electrics sync from overwriting optimistic toggle for a few frames
       var tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
@@ -934,7 +929,7 @@ angular.module('beamng.apps')
           ctx.strokeStyle = 'rgba(0,187,255,0.5)'; ctx.lineWidth = 1
           ctx.beginPath(); ctx.moveTo(cxp, pad); ctx.lineTo(cxp, pad + ph); ctx.stroke()
           var cyp = cl(my(boost), pad, pad + ph)
-          ctx.fillStyle = scope.overboost ? '#ff2244' : '#00bbff'
+          ctx.fillStyle = '#00bbff'
           ctx.beginPath(); ctx.arc(cxp, cyp, 3, 0, 6.283); ctx.fill()
         }
 
@@ -955,33 +950,24 @@ angular.module('beamng.apps')
         function tx(r){return BP.l+cl(r/maxRPM,0,1)*BGW}
         function ty(v){return BP.t+BGH-cl(v/maxPSI,0,1)*BGH}
 
-        // ── Hardware turbo limit zone ──
-        // Anything above the stock turbo's boostMax can't be reached by the
-        // wastegate alone — it requires OVERBOOST. Tint the unreachable zone
-        // and draw a labeled limit line so users can see why their target
-        // isn't being delivered.
+        // ── Turbo rated max — purely informational ──
+        // v8.1.1+: the controller honours whatever the user sets, so the
+        // line is just a "here's what the turbo's rated for" reference.
+        // Above-line targets are still legal; they just stress the turbo.
         if (boostMax > 0 && boostMax < maxPSI) {
           var limY = ty(boostMax)
-          // Fill the zone above the line
-          ctx.fillStyle = scope.forceOB ? 'rgba(255,170,0,0.07)' : 'rgba(120,130,150,0.10)'
+          ctx.fillStyle = 'rgba(255, 170, 0, 0.05)'
           ctx.fillRect(BP.l, BP.t, BGW, limY - BP.t)
-          // Dashed limit line
           ctx.save()
           ctx.setLineDash([6, 4])
-          ctx.strokeStyle = scope.forceOB ? 'rgba(255,170,0,0.7)' : 'rgba(160,170,190,0.6)'
+          ctx.strokeStyle = 'rgba(255, 170, 0, 0.55)'
           ctx.lineWidth = 1
           ctx.beginPath(); ctx.moveTo(BP.l, limY); ctx.lineTo(BP.l + BGW, limY); ctx.stroke()
           ctx.restore()
-          // Label on the right edge
           ctx.font = cl(g.fs, 9, 12).toFixed(0) + 'px Consolas,monospace'
           ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
-          ctx.fillStyle = scope.forceOB ? '#ffaa00' : '#a0aabe'
-          ctx.fillText('TURBO MAX ' + boostMax.toFixed(1) + ' PSI', BP.l + BGW - 4, limY - 2)
-          if (!scope.forceOB) {
-            ctx.textAlign = 'left'; ctx.textBaseline = 'top'
-            ctx.fillStyle = 'rgba(160,170,190,0.55)'
-            ctx.fillText('above limit — enable OVERBOOST to reach', BP.l + 4, BP.t + 2)
-          }
+          ctx.fillStyle = '#ffaa44'
+          ctx.fillText('TURBO RATED MAX ' + boostMax.toFixed(1) + ' PSI', BP.l + BGW - 4, limY - 2)
         }
 
         var steps=Math.max(Math.round(BGW/2),20),step=maxRPM/steps
@@ -1000,24 +986,14 @@ angular.module('beamng.apps')
         var dr=cl(BMW2*0.008,3,7)
         for(var i=0;i<map.length;i++){
           var bx=tx(map[i][0]),by=ty(map[i][1]),hot=(i===hoverIdx||i===dragIdx)
-          // Mark dots that target above the turbo's hardware limit when
-          // OVERBOOST is off — the wastegate alone cannot deliver this.
-          var aboveLimit = boostMax > 0 && map[i][1] > boostMax && !scope.forceOB
           if(hot){ctx.beginPath();ctx.arc(bx,by,dr+6,0,6.283);ctx.fillStyle='rgba(255,102,0,0.08)';ctx.fill()}
           ctx.beginPath();ctx.arc(bx,by,dr+1,0,6.283);ctx.strokeStyle=hot?'#ff8833':'rgba(255,102,0,0.3)';ctx.lineWidth=1;ctx.stroke()
-          ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle = aboveLimit ? '#888a96' : (hot ? '#ff8833' : '#ff6600'); ctx.fill()
+          ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle = hot ? '#ff8833' : '#ff6600'; ctx.fill()
           ctx.beginPath();ctx.arc(bx,by,dr*0.3,0,6.283);ctx.fillStyle='rgba(6,8,14,0.9)';ctx.fill()
-          if (aboveLimit) {
-            ctx.font = 'bold ' + cl(BMW2*0.018, 9, 13).toFixed(0) + 'px sans-serif'
-            ctx.fillStyle = '#ffaa00'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-            ctx.fillText('!', bx + dr + 6, by)
-          }
           if(hot){
             ctx.font='bold '+cl(g.fs+1,10,14).toFixed(0)+'px Consolas,monospace'
             ctx.fillStyle='#dde0ec'; ctx.textAlign='center'; ctx.textBaseline='alphabetic'
-            var tip = map[i][0]+' / '+map[i][1].toFixed(1)+' PSI'
-            if (aboveLimit) tip += '  (above turbo limit)'
-            ctx.fillText(tip, bx, by-dr-6)
+            ctx.fillText(map[i][0]+' / '+map[i][1].toFixed(1)+' PSI', bx, by-dr-6)
           }
         }
 
@@ -1027,7 +1003,7 @@ angular.module('beamng.apps')
         vg.addColorStop(0,'rgba(0,255,136,0)');vg.addColorStop(0.5,'rgba(0,255,136,0.05)');vg.addColorStop(1,'rgba(0,255,136,0)')
         ctx.fillStyle=vg;ctx.fillRect(cx2-0.5,BP.t,1,BGH)
         ctx.beginPath();ctx.arc(cx2,tgy,dr*1.5,0,6.283);ctx.strokeStyle='rgba(255,102,0,0.4)';ctx.lineWidth=cl(lw*0.5,0.5,1);ctx.stroke()
-        var dotC=scope.overboost?'#ff2244':'#00bbff'
+        var dotC='#00bbff'
         ctx.shadowColor=dotC;ctx.shadowBlur=cl(BMW2*0.01,3,10)
         ctx.beginPath();ctx.arc(cx2,cy2,dr*1.2,0,6.283);ctx.fillStyle=dotC;ctx.fill();ctx.shadowBlur=0
       }
@@ -1300,7 +1276,6 @@ angular.module('beamng.apps')
         if (safetyCut) w.push('BOOST CUT — OVERTEMP')
         if (oilT > 130) w.push('OIL TEMP ' + Math.round(oilT) + '°C')
         if (h2oT > 110) w.push('COOLANT ' + Math.round(h2oT) + '°C')
-        if (scope.overboost && !safetyCut) w.push('OVERBOOST')
         if (scope.alsFiring) w.push('ALS ACTIVE')
         if (scope.tcsCut > 0.05) w.push('TC -' + Math.round(scope.tcsCut * 100) + '%')
         if (scope.absInterfering) w.push('ABS')
@@ -1509,7 +1484,6 @@ angular.module('beamng.apps')
           // Peak trackers
           if(boost>peakBoost)peakBoost=boost
           if(rpm>peakRPM)peakRPM=rpm
-          scope.overboost=(tgt>0&&boost>tgt+2)
 
           // Shift light at 90% of max RPM
           scope.shiftLight = (rpm > maxRPM * shiftRpmPct && rpm > 1000)
