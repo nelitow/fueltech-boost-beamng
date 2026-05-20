@@ -74,7 +74,7 @@ jobs:
             ui/ \
             vehicles/ \
             mod_info/ \
-            scripts/ \
+            scripts/modScript.lua \
             README.md \
             -x "*.git*"
 
