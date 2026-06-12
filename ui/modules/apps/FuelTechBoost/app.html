@@ -79,11 +79,10 @@
   </div>
 
   <!-- Tune overlay: on-demand, compact centered panel with boost map + power curve.
-       Hidden by default to keep the dashboard's middle clear. -->
-  <div class="ft-tune-backdrop" ng-if="tuneOpen" ng-click="toggleTune()"></div>
+       Non-blocking — no backdrop, draggable, ESC to dismiss. -->
   <div class="ft-tune-panel" ng-show="tuneOpen">
     <div class="ft-tune-title" ng-mousedown="tuneDragStart($event)" ng-touchstart="tuneDragStart($event)">
-      <span>⠿ TUNE — drag dots to set boost-by-RPM. Drag this bar to move the panel.</span>
+      <span>⠿ TUNE — drag dots to set boost-by-RPM · drag bar to move · ESC to close</span>
       <span class="ft-tune-close" ng-click="toggleTune()">×</span>
     </div>
     <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>

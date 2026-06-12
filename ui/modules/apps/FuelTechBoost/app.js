@@ -54,6 +54,7 @@ angular.module('beamng.apps')
         StreamsManager.remove(streamsList)
         if (resizeObs) resizeObs.disconnect()
         window.removeEventListener('resize', forceFullscreen)
+        document.removeEventListener('keydown', onTuneKeyDown)
         if (fullscreenInterval) clearInterval(fullscreenInterval)
         if (initTimer) clearTimeout(initTimer)
         if (cvsMap) {
@@ -204,6 +205,13 @@ angular.module('beamng.apps')
         })
       })
 
+      // Sync preset state from Lua (survives Ctrl+R / vehicle reload)
+      scope.$on('fueltechPresetInfo', function (_, d) {
+        if (d && d.preset) {
+          scope.$evalAsync(function () { scope.preset = d.preset })
+        }
+      })
+
       // Boost-by-gear data
       scope.$on('fueltechBoostByGearInfo', function (_, d) {
         if (d) {
@@ -294,6 +302,7 @@ angular.module('beamng.apps')
       function requestData () {
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").getBoostTable()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()') } catch (e) {}
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPresetInfo()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").getInfo()') } catch (e) {}
         // Request BeamNG's native torque curve data (same as default power app)
         try { bngApi.activeObjectLua('controller.mainController.sendTorqueData()') } catch (e) {}
@@ -386,6 +395,15 @@ angular.module('beamng.apps')
         document.removeEventListener('touchmove', tuneDragMove)
         document.removeEventListener('touchend',  tuneDragEnd)
       }
+
+      // ESC to dismiss the TUNE panel
+      function onTuneKeyDown (e) {
+        if (e.key === 'Escape' && scope.tuneOpen) {
+          e.preventDefault()
+          scope.$evalAsync(function () { scope.toggleTune() })
+        }
+      }
+      document.addEventListener('keydown', onTuneKeyDown)
 
       // Drag timer
       scope.resetDrag = function () {
@@ -570,7 +588,7 @@ angular.module('beamng.apps')
           var minY = 0,            maxY = H - 30
           var tuneX = cl(baseX + tuneOffsetX, minX, maxX)
           var tuneY = cl(baseY + tuneOffsetY, minY, maxY)
-          tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.96);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden'
+          tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.88);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.5);padding:6px;overflow:hidden;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)'
 
           // Inside the panel: title strip on top, then map (left) + pwr (right)
           var titleH = 22

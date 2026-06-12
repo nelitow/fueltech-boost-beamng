@@ -1,8 +1,23 @@
-/* Root — transparent HUD overlay, JS forces viewport size */
+/* Root — transparent HUD overlay, JS forces viewport size.
+   pointer-events:none lets clicks pass through to widgets below;
+   interactive children re-enable with pointer-events:auto. */
 .ft {
   background: transparent;
   color: #d8dce8;
   font-family: Consolas, 'Courier New', monospace;
+  pointer-events: none;
+}
+
+/* Re-enable pointer events on all interactive bands */
+.ft-hdr,
+.ft-telem,
+.ft-bar,
+.ft-warn,
+.ft-dmg,
+.ft-tune-panel,
+.ft-cell,
+.ft-c-dt {
+  pointer-events: auto;
 }
 
 /* Header */
@@ -72,24 +87,19 @@
 .ft-num4 { display: inline-block; min-width: 3.5ch; text-align: right; font-variant-numeric: tabular-nums; }
 .ft-num6 { display: inline-block; min-width: 5.5ch; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* TUNE overlay — compact, centered. Backdrop catches outside-clicks to close. */
-.ft-tune-backdrop {
-  position: absolute;
-  z-index: 30;
-  left: 0; top: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.55);
-  cursor: pointer;
-}
+/* TUNE overlay — compact, centered, non-blocking (no backdrop). */
 .ft-tune-panel {
   position: absolute;
   z-index: 31;
-  background: rgba(10, 12, 20, 0.96);
+  background: rgba(10, 12, 20, 0.88);
   border: 1px solid rgba(255, 102, 0, 0.4);
   border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   padding: 6px;
   box-sizing: border-box;
   overflow: hidden;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 .ft-tune-title {
   position: absolute;
@@ -209,6 +219,7 @@
   border-radius: 3px;
   color: #6a7498;
   cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ft-btn:hover {
