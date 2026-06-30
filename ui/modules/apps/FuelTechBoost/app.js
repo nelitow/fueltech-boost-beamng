@@ -8,54 +8,10 @@ angular.module('beamng.apps')
     link: function (scope, element) {
       var streamsList = ['electrics', 'engineInfo', 'wheelThermalData']
       StreamsManager.add(streamsList)
-      // Force app widget to fill the game viewport
       var root = element[0]
-      function forceFullscreen () {
-        var vw = window.innerWidth, vh = window.innerHeight
-        if (vw < 100 || vh < 100) return
-
-        // Resize the widget container (parent of our app root)
-        // BeamNG stores widget size in the parent's inline style
-        var container = root.parentElement
-        while (container && container !== document.body) {
-          if (container.style && (container.style.width || container.style.height)) {
-            container.style.width = vw + 'px'
-            container.style.height = vh + 'px'
-            container.style.left = '0px'
-            container.style.top = '0px'
-            container.style.right = ''
-            container.style.bottom = ''
-          }
-          container = container.parentElement
-        }
-
-        // Also size our root element
-        root.style.width = vw + 'px'
-        root.style.height = vh + 'px'
-
-        if (!lay || appW !== vw || appH !== vh) {
-          lay = null
-          doLayout(vw, vh)
-          drawAll()
-        }
-      }
-      var resizeObs = null
-      try {
-        resizeObs = new ResizeObserver(forceFullscreen)
-        resizeObs.observe(document.body)
-      } catch(e) {}
-      window.addEventListener('resize', forceFullscreen)
-      // Run immediately and periodically to catch late layout changes
-      setTimeout(forceFullscreen, 100)
-      setTimeout(forceFullscreen, 500)
-      var fullscreenInterval = setInterval(forceFullscreen, 2000)
 
       scope.$on('$destroy', function () {
         StreamsManager.remove(streamsList)
-        if (resizeObs) resizeObs.disconnect()
-        window.removeEventListener('resize', forceFullscreen)
-        document.removeEventListener('keydown', onTuneKeyDown)
-        if (fullscreenInterval) clearInterval(fullscreenInterval)
         if (initTimer) clearTimeout(initTimer)
         if (cvsMap) {
           cvsMap.removeEventListener('mousedown', onDown)
@@ -90,7 +46,6 @@ angular.module('beamng.apps')
       scope.peakRpmStr = '0'
       scope.speedStr = '0'; scope.gearStr = 'N'; scope.gearModeStr = ''
       scope.preset = 'CUSTOM'
-      scope.dtFeatures = []
       scope.dmodes = []
       scope.hasTCS = false
       scope.tcsActive = false  // matches lua default (custom TCS off by default in v8.1.0+)
@@ -131,11 +86,6 @@ angular.module('beamng.apps')
       scope.drag200done = false
       var dragActive = false, dragStart = 0, drag100t = 0, drag200t = 0
 
-      // Turbo cooldown timer
-      scope.turboTimerActive = false
-      scope.turboTimerStr = '0'
-      var turboTimerStart = 0, turboTimerDuration = 30
-
       var map = [[2000,5],[3000,10],[4000,15],[5000,20],[6000,20],[7000,18]]
       var pwrData = null
 
@@ -168,25 +118,6 @@ angular.module('beamng.apps')
         if (stockTorqueArr) drawPower()
       })
 
-      scope.$on('fueltechDrivetrainInfo', function (_, data) {
-        if (!data || !data.length) return
-        scope.$evalAsync(function () {
-          scope.dtFeatures = []
-          for (var i = 0; i < data.length; i++) {
-            scope.dtFeatures.push({
-              type: data[i].type,
-              name: data[i].name,
-              label: data[i].label,
-              modeLabels: data[i].modeLabels || [],
-              electricsName: data[i].electricsName,
-              modeIndex: 0,
-              modeLabel: (data[i].modeLabels || [])[0] || '?',
-              active: false
-            })
-          }
-        })
-      })
-
       scope.$on('fueltechDriveModesInfo', function (_, data) {
         if (!data || !data.length) return
         scope.$evalAsync(function () {
@@ -203,13 +134,6 @@ angular.module('beamng.apps')
             if (data[i].name === 'absController') scope.hasABS = true
           }
         })
-      })
-
-      // Sync preset state from Lua (survives Ctrl+R / vehicle reload)
-      scope.$on('fueltechPresetInfo', function (_, d) {
-        if (d && d.preset) {
-          scope.$evalAsync(function () { scope.preset = d.preset })
-        }
       })
 
       // Boost-by-gear data
@@ -302,7 +226,6 @@ angular.module('beamng.apps')
       function requestData () {
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").getBoostTable()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()') } catch (e) {}
-        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPresetInfo()') } catch (e) {}
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").getInfo()') } catch (e) {}
         // Request BeamNG's native torque curve data (same as default power app)
         try { bngApi.activeObjectLua('controller.mainController.sendTorqueData()') } catch (e) {}
@@ -322,13 +245,6 @@ angular.module('beamng.apps')
       }
       scope.resetPeak = function () { peakBoost = 0; scope.peakStr = '0.0' }
       scope.resetPeakRpm = function () { peakRPM = 0; scope.peakRpmStr = '0' }
-      scope.toggleDt = function (f) {
-        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleFeature("' + f.name + '")') } catch(e) {}
-      }
-      scope.toggleDm = function (dm) {
-        dm.active = !dm.active
-        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("' + dm.name + '")') } catch(e) {}
-      }
       // Debounce flags — prevent electrics sync from overwriting optimistic toggle for a few frames
       var tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
       scope.toggleTC = function () {
@@ -396,15 +312,6 @@ angular.module('beamng.apps')
         document.removeEventListener('touchend',  tuneDragEnd)
       }
 
-      // ESC to dismiss the TUNE panel
-      function onTuneKeyDown (e) {
-        if (e.key === 'Escape' && scope.tuneOpen) {
-          e.preventDefault()
-          scope.$evalAsync(function () { scope.toggleTune() })
-        }
-      }
-      document.addEventListener('keydown', onTuneKeyDown)
-
       // Drag timer
       scope.resetDrag = function () {
         dragActive = false; dragStart = 0; drag100t = 0; drag200t = 0
@@ -435,23 +342,12 @@ angular.module('beamng.apps')
       }
 
       /* ==================== LAYOUT ==================== */
-      /*  v8.1.0 minimal-overlap layout. Users disliked duplicating BeamNG's
-       *  stock RPM / speedo / gear / boost gauges, so those are gone. This
-       *  app now only renders things stock BeamNG doesn't already show:
-       *  fueltech-specific telemetry, the mini boost-map preview, the
-       *  control bar (presets + OVERBOOST + ALS + TC + ABS), warnings and
-       *  damage log.
-       *
-       *  ┌─ HEADER (FUELTECH / BOOST-PK / TUNE button / version) ────┐ 3.5%
-       *  ├─ TELEM STRIP (WT / LOAD / FUEL / EXH / CLT / ALT / ODO) ─┤ 2.8%
-       *  │                                                          │
-       *  │            ── transparent center (see the car) ──        │ ~70%
-       *  │                                                          │
-       *  ├──────────────────────────────────────────────────────────┤
-       *  │ OIL │ H2O │ MINI-BOOST-MAP │ G-FORCE │ DRAG │ DT-MODES   │ ~10%
-       *  ├──────────────────────────────────────────────────────────┤
-       *  │ [OFF][STOCK][MAX][AUTOMAX][CUSTOM][OB][ALS][TC][ABS]     │ ~4%
-       *  └──────────────────────────────────────────────────────────┘
+      /*  Compact resizable layout — no transparent center.
+       *  ┌─ HEADER ──────────────────────────────────────────┐
+       *  ├─ TELEM STRIP ─────────────────────────────────────┤
+       *  ├─ OIL │ H2O │ MINI-MAP │ G-FORCE │ DRAG ─────────┤
+       *  ├─ CONTROL BAR ─────────────────────────────────────┤
+       *  └───────────────────────────────────────────────────┘
        */
       var GAP = 4
       var appW = 0, appH = 0
@@ -462,7 +358,7 @@ angular.module('beamng.apps')
       var GRAPH_BG = 'background:rgba(6,8,14,0.6);border:1px solid rgba(24,28,40,0.3);border-radius:8px'
 
       function doLayout (W, H) {
-        if (W < 100 || H < 100) return null
+        if (W < 200 || H < 120) return null
         if (lay && appW === W && appH === H) return lay
         appW = W; appH = H
 
@@ -472,27 +368,17 @@ angular.module('beamng.apps')
         var G = GAP
         var usableW = W - G * 2
 
-        // ── Layout philosophy ──
-        // Hug the edges: gauges live in narrow LEFT and RIGHT bands (~17% each)
-        // and in TOP and BOTTOM bands (header/telemetry up top, secondary row +
-        // control bar at bottom). The middle ~66% × ~70% of the dashboard stays
-        // transparent so the player can see the car.
-
-        // ── Vertical zone heights ──
-        var hdrH  = cl(Math.round(H * 0.035), 26, 40)
-        var telH  = cl(Math.round(H * 0.028), 20, 32)
-        var barH  = cl(Math.round(H * 0.035), 26, 36)
-        var secH  = cl(Math.round(H * 0.10), 56, 100)
+        // Compact stacked layout — no transparent center
+        var hdrH  = cl(Math.round(H * 0.11), 24, 36)
+        var telH  = cl(Math.round(H * 0.09), 18, 28)
+        var barH  = cl(Math.round(H * 0.11), 24, 32)
 
         var topY   = G
         var telY   = topY + hdrH + 2
-        var barY   = H - barH - G                 // control bar at very bottom
-        var secY   = barY - secH - G              // secondary row above control bar
-
-        // Side bands sit between telemetry and secondary row
-        var sideY  = telY + telH + G
-        var sideH  = secY - sideY - G
-        if (sideH < 80) sideH = 80                // safety floor for tiny windows
+        var barY   = H - barH - G
+        var rowY   = telY + telH + 2
+        var rowH   = barY - rowY - 2
+        if (rowH < 40) rowH = 40
 
         // ── 12-column grid ──
         var colW = usableW / 12
@@ -513,82 +399,57 @@ angular.module('beamng.apps')
         box(q('.ft-telem'), 1, 12, telY, telH,
           'display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px')
 
-        // ── Warning bar (overlay just under telemetry) ──
+        // Warning bar (overlay on gauges row)
         var warnEl = q('.ft-warn')
         if (warnEl) {
-          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+G+'px;top:'+sideY+'px;width:'+usableW+'px;height:'+cl(telH,14,24)+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
+          warnEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:20;left:'+G+'px;top:'+rowY+'px;width:'+usableW+'px;height:'+cl(telH,14,24)+'px;overflow:hidden;display:flex;justify-content:center;align-items:center;gap:20px;padding:0 14px;background:rgba(255,34,68,0.15);border:1px solid rgba(255,34,68,0.4);border-radius:4px'
         }
 
-        // ── Damage log (overlay below warning) ──
+        // Damage log (overlay below warning)
         var dmgEl = q('.ft-dmg')
         if (dmgEl) {
-          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(sideY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
+          dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(rowY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px'
         }
 
-        // ── Side gauges: removed in v8.1.0 ──
-        // RPM, boost PSI, turbo-RPM, speedometer, and gear display all live
-        // in BeamNG's stock UI Apps now. Forcibly hide their cells so any
-        // stale CSS / leftover HTML doesn't show up.
+        // Hide stale cells from earlier versions
         var stale = ['.ft-c-rpm', '.ft-c-bst', '.ft-c-trb', '.ft-c-spd']
         for (var si = 0; si < stale.length; si++) {
           var sel = stale[si]; var el = q(sel)
           if (el) el.style.display = 'none'
         }
 
-        // ── Secondary row (bottom band, just above control bar) ──
-        // Two-temp gauges + mini boost-map preview + G-force + drag timer.
-        // Optional drivetrain-toggles cell stacks alongside if the vehicle
-        // has any auto-detected diff / range / AWD modes.
-        var dtEl = q('.ft-c-dt')
-        var showDt = dtEl && dtEl.children && dtEl.children.length > 0
-        var miniMapCols, dragCols, dtCols
+        // Gauges row — fills remaining vertical space
         if (hasTurbo) {
-          // With boost map preview: 2 + 2 + 3 + 2 + 2 + 1 (dt if present)
-          miniMapCols = 3; dragCols = 2; dtCols = showDt ? 1 : 0
-          box(q('.ft-c-oil'),     1, 2, secY, secH)
-          box(q('.ft-c-h2o'),     3, 2, secY, secH)
-          box(q('.ft-c-minimap'), 5, miniMapCols, secY, secH, GRAPH_BG)
-          box(q('.ft-c-gforce'),  5 + miniMapCols, 2, secY, secH)
-          box(q('.ft-c-drag'),    5 + miniMapCols + 2, dragCols, secY, secH,
+          box(q('.ft-c-oil'),     1, 2, rowY, rowH)
+          box(q('.ft-c-h2o'),     3, 2, rowY, rowH)
+          box(q('.ft-c-minimap'), 5, 3, rowY, rowH, GRAPH_BG)
+          box(q('.ft-c-gforce'),  8, 2, rowY, rowH)
+          box(q('.ft-c-drag'),   10, 3, rowY, rowH,
             'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
-          if (showDt) box(dtEl,   12, dtCols, secY, secH)
-          else if (dtEl) dtEl.style.display = 'none'
         } else {
-          // NA cars — no mini boost map. Widen the temps and G-force.
           var mEl = q('.ft-c-minimap'); if (mEl) mEl.style.display = 'none'
-          box(q('.ft-c-oil'),    1, 3, secY, secH)
-          box(q('.ft-c-h2o'),    4, 3, secY, secH)
-          box(q('.ft-c-gforce'), 7, 3, secY, secH)
-          box(q('.ft-c-drag'),  10, 3, secY, secH,
+          box(q('.ft-c-oil'),    1, 3, rowY, rowH)
+          box(q('.ft-c-h2o'),    4, 3, rowY, rowH)
+          box(q('.ft-c-gforce'), 7, 3, rowY, rowH)
+          box(q('.ft-c-drag'),  10, 3, rowY, rowH,
             'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
-          if (showDt) {
-            // No room in the secondary row; float over the cleared centre area instead
-            dtEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:5;left:'+G+'px;top:'+sideY+'px;width:'+usableW+'px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:6px;pointer-events:auto'
-          } else if (dtEl) dtEl.style.display = 'none'
         }
 
-        // ── TUNE overlay (compact centered panel, on-demand) ──
-        // Holds the interactive boost map + power curve. Only positioned
-        // when scope.tuneOpen is true, so the dashboard middle stays clear
-        // by default. Sized as a compact panel: 55% width × 45% height,
-        // clamped to keep it readable on small/large dashboards.
+        // TUNE overlay (compact centered panel, on-demand)
         var tunePanel = q('.ft-tune-panel')
         var mapEl = q('.ft-c-map')
         var pwrEl = q('.ft-c-pwr')
         var tuneMapW = 0, tuneMapH = 0, tunePwrW = 0
         if (scope.tuneOpen && tunePanel) {
-          var tuneW = cl(Math.round(W * 0.55), 420, 760)
-          var tuneH = cl(Math.round(H * 0.45), 220, 380)
-          // Centered base position + user drag offset. Clamp so the title
-          // bar always stays grabbable inside the dashboard (at least 60px
-          // of the panel on each axis must remain on-screen).
+          var tuneW = cl(Math.round(W * 0.7), 400, 760)
+          var tuneH = cl(Math.round(H * 0.88), 180, 380)
           var baseX = (W - tuneW) / 2
           var baseY = (H - tuneH) / 2
           var minX = -tuneW + 60, maxX = W - 60
           var minY = 0,            maxY = H - 30
           var tuneX = cl(baseX + tuneOffsetX, minX, maxX)
           var tuneY = cl(baseY + tuneOffsetY, minY, maxY)
-          tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.88);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.5);padding:6px;overflow:hidden;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)'
+          tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(10,12,20,0.96);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden'
 
           // Inside the panel: title strip on top, then map (left) + pwr (right)
           var titleH = 22
@@ -613,28 +474,17 @@ angular.module('beamng.apps')
           barEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+G+'px;top:'+barY+'px;width:'+usableW+'px;height:'+barH+'px;display:flex;gap:3px;align-items:center'
         }
 
-        // ── Turbo timer overlay (top-center, small — out of clear zone) ──
-        var ttEl = q('.ft-turbo-timer')
-        if (ttEl) {
-          var ttW = cw2(4), ttH2 = Math.round(sideH * 0.28)
-          ttEl.style.cssText = 'position:absolute;z-index:18;left:'+((W-ttW)/2)+'px;top:'+(sideY+G)+'px;width:'+ttW+'px;height:'+ttH2+'px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,12,20,0.85);border:1px solid rgba(255,102,0,0.3);border-radius:10px;pointer-events:none'
-        }
-
-        // ── Build lay object for canvas sizing ──
-        var col2W = cw2(2), col3W = cw2(3), col6W = cw2(6)
+        // Build lay object for canvas sizing
+        var col2W = cw2(2), col3W = cw2(3)
 
         lay = {
-          // Main gauges removed in v8.1.0 — zeros so any stale drawAll
-          // calls no-op rather than throw on undefined dims.
           gaugeW: 0, gaugeH: 0,
           bstW: 0, bstH: 0,
           trbW: 0, trbH: 0,
-          oilW: hasTurbo ? col2W : col3W, oilH: secH,
-          h2oW: hasTurbo ? col2W : col3W, h2oH: secH,
-          miniW: hasTurbo ? cw2(3) : 0, miniH: secH,
-          gfW:  hasTurbo ? col2W : col3W, gfH: secH,
-          // Boost map + power curve get real sizes only when the TUNE panel
-          // is open; otherwise they're hidden and never drawn.
+          oilW: hasTurbo ? col2W : col3W, oilH: rowH,
+          h2oW: hasTurbo ? col2W : col3W, h2oH: rowH,
+          miniW: hasTurbo ? cw2(3) : 0, miniH: rowH,
+          gfW:  hasTurbo ? col2W : col3W, gfH: rowH,
           graphW: tuneMapW, graphH: tuneMapH,
           pwrW: tunePwrW
         }
@@ -1255,10 +1105,9 @@ angular.module('beamng.apps')
       })
 
       scope.$on('windowResize', function () {
-        var root = element[0]
-        var W = root.offsetWidth || window.innerWidth || 800
-        var H = root.offsetHeight || window.innerHeight || 600
-        if (W > 100 && H > 100) {
+        var W = root.offsetWidth || 800
+        var H = root.offsetHeight || 300
+        if (W > 200 && H > 120) {
           lay = null
           doLayout(W, H)
           drawAll()
@@ -1267,10 +1116,9 @@ angular.module('beamng.apps')
 
       var initTimer = setTimeout(function () {
         if (!lay) {
-          var root = element[0]
-          var W = root.offsetWidth || window.innerWidth || 800
-          var H = root.offsetHeight || window.innerHeight || 600
-          if (W > 100 && H > 100) {
+          var W = root.offsetWidth || 800
+          var H = root.offsetHeight || 300
+          if (W > 200 && H > 120) {
             doLayout(W, H)
             drawAll()
           }
@@ -1334,50 +1182,6 @@ angular.module('beamng.apps')
 
           // Auto-stop if braking or stopped
           if (spd < 1 && elapsed > 2) dragActive = false
-        }
-      }
-
-      /* ==================== TURBO TIMER ==================== */
-      // Turbo cooldown timer: after sustained boost driving, when you come to
-      // idle, shows a countdown recommending you let the engine idle before
-      // shutdown. This protects the turbo bearings from oil coking.
-      var turboWasHot = false
-      var turboHotSeconds = 0   // how long the turbo was driven hard (proxy for heat)
-
-      function updateTurboTimer () {
-        // Track when turbo was under hard load (high boost + high RPM)
-        var isHardDriving = boost > 10 && rpm > 4000
-        if (isHardDriving) {
-          turboWasHot = true
-          turboHotSeconds += 1 / 60  // approx — called once per frame
-        }
-
-        // Trigger: was hot, now idling (low RPM, low throttle, low speed)
-        var isIdling = rpm > 300 && rpm < 1200 && throttle < 0.05 && speed < 5
-
-        if (turboWasHot && isIdling) {
-          if (!scope.turboTimerActive) {
-            scope.turboTimerActive = true
-            turboTimerStart = Date.now()
-            // Duration scales with how long the turbo was hot: 30s base, up to 90s
-            turboTimerDuration = cl(30 + turboHotSeconds * 2, 30, 90)
-          }
-          var elapsed = (Date.now() - turboTimerStart) / 1000
-          var remaining = Math.max(0, turboTimerDuration - elapsed)
-          scope.turboTimerStr = remaining.toFixed(0)
-          if (remaining <= 0) {
-            scope.turboTimerActive = false
-            turboWasHot = false
-            turboHotSeconds = 0
-          }
-        } else if (rpm > 2000 || speed > 20) {
-          // Driving again — cancel timer, reset if turbo has cooled
-          scope.turboTimerActive = false
-          turboTimerStart = 0
-          if (boost < 3) {
-            turboWasHot = false
-            turboHotSeconds = Math.max(0, turboHotSeconds - 0.5)
-          }
         }
       }
 
@@ -1447,24 +1251,6 @@ angular.module('beamng.apps')
               scope.gearModeStr = ''
             }
 
-            // Drivetrain features
-            for (var di = 0; di < scope.dtFeatures.length; di++) {
-              var df = scope.dtFeatures[di]
-              var dv = s.electrics[df.electricsName]
-              if (dv !== undefined) {
-                df.modeIndex = dv
-                df.modeLabel = df.modeLabels[dv] || '?'
-                df.active = dv > 0
-              }
-            }
-            // Drive modes (ESC/TCS/ABS) — read active state from electrics
-            for (var dmi = 0; dmi < scope.dmodes.length; dmi++) {
-              var dm = scope.dmodes[dmi]
-              var ev = s.electrics[dm.electricsKey]
-              if (ev !== undefined) {
-                dm.active = !!ev
-              }
-            }
             // Custom TCS cut amount (0 = no cut, >0 = intervening)
             scope.tcsCut = s.electrics.fueltech_tcs_cut || 0
             // Sync TC state from electrics (with debounce after toggle)
@@ -1512,9 +1298,6 @@ angular.module('beamng.apps')
           // Drag timer
           updateDragTimer()
 
-          // Turbo timer
-          updateTurboTimer()
-
           // Update display strings
           scope.rpmStr=Math.round(rpm).toString(); scope.boostStr=boost.toFixed(1)
           scope.tgtStr=tgt.toFixed(1); scope.peakStr=peakBoost.toFixed(1); scope.boostMaxStr=boostMax>0?boostMax.toFixed(1):''
@@ -1556,10 +1339,9 @@ angular.module('beamng.apps')
           scope.brakeTemps = bts
 
           if (!lay) {
-            var root = element[0]
-            var W = root.offsetWidth || window.innerWidth || 800
-            var H = root.offsetHeight || window.innerHeight || 600
-            if (W > 100 && H > 100) doLayout(W, H)
+            var W = root.offsetWidth || 800
+            var H = root.offsetHeight || 300
+            if (W > 200 && H > 120) doLayout(W, H)
           }
           if (lay) drawAll()
         })
