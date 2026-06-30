@@ -42,19 +42,6 @@
   <!-- Shift light overlay -->
   <div class="ft-shift" ng-if="shiftLight" ng-class="{'ft-shift-on': shiftLight}"></div>
 
-  <!-- Drivetrain mode toggles (auto-detected diff lock, range, AWD modes).
-       Stays visible — these are not duplicated by stock BeamNG widgets. -->
-  <div class="ft-cell ft-c-dt" ng-if="dtFeatures.length || dmodes.length">
-    <span class="ft-dt-btn" ng-repeat="f in dtFeatures"
-          ng-click="toggleDt(f)" ng-class="{'ft-dt-on': f.active}">
-      {{f.label}}: {{f.modeLabel}}
-    </span>
-    <span class="ft-dt-btn" ng-repeat="dm in dmodes" ng-if="dm.name !== 'tcs' && dm.name !== 'absController'"
-          ng-click="toggleDm(dm)" ng-class="{'ft-dt-on': dm.active}">
-      {{dm.label}}
-    </span>
-  </div>
-
   <!-- Mini gauges row (bottom band) -->
   <div class="ft-cell ft-c-oil"><canvas class="ft-cv ft-cv-oil"></canvas></div>
   <div class="ft-cell ft-c-h2o"><canvas class="ft-cv ft-cv-h2o"></canvas></div>
@@ -79,10 +66,11 @@
   </div>
 
   <!-- Tune overlay: on-demand, compact centered panel with boost map + power curve.
-       Non-blocking — no backdrop, draggable, ESC to dismiss. -->
+       Hidden by default to keep the dashboard's middle clear. -->
+  <div class="ft-tune-backdrop" ng-if="tuneOpen" ng-click="toggleTune()"></div>
   <div class="ft-tune-panel" ng-show="tuneOpen">
     <div class="ft-tune-title" ng-mousedown="tuneDragStart($event)" ng-touchstart="tuneDragStart($event)">
-      <span>⠿ TUNE — drag dots to set boost-by-RPM · drag bar to move · ESC to close</span>
+      <span>⠿ TUNE — drag dots to set boost-by-RPM. Drag this bar to move the panel.</span>
       <span class="ft-tune-close" ng-click="toggleTune()">×</span>
     </div>
     <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
@@ -108,9 +96,4 @@
           ng-class="{'ft-btn-abs-on': absActive && !absInterfering, 'ft-btn-abs-off': !absActive, 'ft-btn-abs-active': absActive && absInterfering}">ABS</span>
   </div>
 
-  <!-- Turbo cooldown timer overlay -->
-  <div class="ft-turbo-timer" ng-if="hasTurbo && turboTimerActive">
-    <div class="ft-turbo-timer-label">TURBO COOLDOWN — KEEP IDLING</div>
-    <div class="ft-turbo-timer-val">{{turboTimerStr}}s</div>
-  </div>
 </div>
