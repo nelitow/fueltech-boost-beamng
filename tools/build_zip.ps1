@@ -7,7 +7,7 @@
 # always writes forward-slash paths, exactly matching the zip the GitHub
 # Actions release workflow produces.
 #
-# Usage:  pwsh scripts/build_zip.ps1
+# Usage:  pwsh tools/build_zip.ps1
 # Output: dist/fueltech_boost_controller.zip
 
 $ErrorActionPreference = "Stop"
@@ -67,6 +67,7 @@ if ($badPaths) {
 # Sanity check structure: top-level entries must be lua/, ui/, vehicles/,
 # mod_info/, README.md — no wrapper folder.
 $expectedTop = @{ "lua" = $true; "ui" = $true; "vehicles" = $true; "mod_info" = $true; "scripts" = $true; "README.md" = $true }
+# NOTE: scripts/ only contains modScript.lua (build tooling lives in tools/, outside the mod)
 $topLevels = $entryNames | ForEach-Object {
   $idx = $_.IndexOf("/")
   if ($idx -lt 0) { $_ } else { $_.Substring(0, $idx) }
