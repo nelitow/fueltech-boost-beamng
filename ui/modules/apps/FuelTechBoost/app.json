@@ -5,7 +5,8 @@
   "types": ["ui.apps.categories.vehicle_info"],
   "description": "FuelTech racing dashboard with gauges, interactive boost map, power curves, and telemetry.",
   "author": "Nelito",
-  "version": "1.1.0",
+  "version": "1.2.0",
+  "vue": true,
   "category": "Engine",
   "css": {
     "width": "900px",

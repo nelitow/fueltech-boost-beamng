@@ -47,9 +47,11 @@ mods/
 
 The boost + drivetrain controllers will auto-load on every vehicle from now on — turbo, supercharged, NA, modded — no Vehicle Config step needed.
 
+> **After a major BeamNG update** (e.g. 0.38 → 0.39): the game automatically disables **all** mods as a safety measure. Re-enable FuelTech once in the Mod Manager — this is BeamNG policy, not a bug in the mod.
+
 ### 4. Add the dashboard to your screen
 
-1. Press **Esc** → click **UI Apps** (bottom-left).
+1. Press **Esc** → click **HUD Apps** (called *UI Apps* before BeamNG 0.39; the editor now lives under Pause → System).
 2. Search for **"FuelTech Dashboard"**.
 3. Click to drop it on screen.
 4. **Drag the edges** to resize.
@@ -65,7 +67,8 @@ The dashboard auto-detects your vehicle:
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard doesn't appear in UI Apps | Zip is in the wrong folder. Check both paths in step 2. |
+| Dashboard doesn't appear in HUD Apps | Zip is in the wrong folder. Check both paths in step 2. |
+| Mod vanished after a BeamNG update | The game disables all mods on major updates. Re-enable it in the Mod Manager. |
 | Dashboard shows but ACTIVE never lights up on a turbo car | The GE extension isn't loading. Restart BeamNG fully (close + reopen, not just main menu). |
 | Old saved configs still have a "FuelTech Boost Controller" part listed | Harmless — the legacy N2O-slot jbeam still ships for backwards compatibility. The auto-attach detects the duplicate and skips. |
 | Wrong folder structure after extracting | Don't extract — see step 1. Delete the unpacked folder and start over. |
@@ -137,7 +140,7 @@ Engine load, fuel level, exhaust flow, clutch position, altitude, odometer, chec
 - This happens when BeamNG's saved config resets the tuning variables. Click the STOCK preset to restore factory boost levels.
 
 **Dashboard too small?**
-- Drag the widget edges in the UI Apps editor to make it larger. The dashboard auto-fills to whatever size you give it.
+- Drag the widget edges in the HUD Apps editor (Pause → System on 0.39+) to make it larger. The dashboard auto-fills to whatever size you give it.
 
 **No presets/buttons visible?**
 - Presets only appear for turbo/supercharged vehicles. On NA cars they're hidden.
@@ -162,7 +165,7 @@ fueltech_boost_controller/
 
 ## Compatibility
 
-- BeamNG.drive 0.34+
+- BeamNG.drive 0.34+ (tested through **0.39**)
 - Turbocharged, supercharged, and NA vehicles
 - Touch support (Steam Deck / touchscreen)
 

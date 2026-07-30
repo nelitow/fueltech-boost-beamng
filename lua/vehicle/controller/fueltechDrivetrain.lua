@@ -26,6 +26,32 @@ local TCS_CUT_RATE        = 10.0  -- how fast throttle cuts (per second)
 local TCS_RECOVER_RATE    = 3.0   -- how fast throttle recovers (per second)
 local TCS_MIN_SPEED       = 2.0   -- m/s — don't intervene below ~7 km/h
 
+-- Vehicle mass cache (refreshed at 1 Hz — mass only changes with damage,
+-- fuel burn, or part swaps). Published from THIS controller (not the boost
+-- controller) because this one attaches to every vehicle, so the WT readout
+-- works on NA and EV cars too.
+local cachedMass = 0
+local massUpdateTimer = 0
+
+local function publishMass(dt)
+  massUpdateTimer = massUpdateTimer + dt
+  if cachedMass == 0 or massUpdateTimer > 1.0 then
+    massUpdateTimer = 0
+    local m = 0
+    local ok, val = pcall(function() return obj:getTotalMass() end)
+    if ok and type(val) == "number" and val > 0 then
+      m = val
+    elseif v and v.data and v.data.nodes then
+      -- Fallback: sum node weights directly (works on every build)
+      for _, node in pairs(v.data.nodes) do
+        m = m + (node.nodeWeight or 0)
+      end
+    end
+    cachedMass = m
+  end
+  electrics.values.fueltech_mass = cachedMass
+end
+
 local function getLabel(name, devType)
   local n = string.lower(name or "")
   if devType == "range" then return "RANGE" end
@@ -252,6 +278,10 @@ local function updateCustomTCS(dt)
 end
 
 local function updateGFX(dt)
+  -- Mass publishes unconditionally — even before the drivetrain scan
+  -- completes, and on vehicles with nothing switchable.
+  publishMass(dt)
+
   if not scanned then
     scanTimer = scanTimer + dt
     if scanTimer >= 0.5 then
@@ -335,6 +365,8 @@ local function reset()
   scanTimer = 0
   tcsThrottleMul = 1.0
   customTCSIntervening = false
+  cachedMass = 0        -- re-derive after reset (part swaps change mass)
+  massUpdateTimer = 0
 end
 
 M.init = init

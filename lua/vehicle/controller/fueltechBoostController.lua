@@ -27,10 +27,6 @@ local ALS_MIN_RPM = 3500       -- don't fire below this RPM
 local ALS_THROTTLE_OPEN = 0.25 -- hold throttle at 25% when ALS fires
 local ALS_WASTEGATE_HOLD = 5   -- wastegate offset to hold during ALS (keeps turbo spinning)
 
--- Vehicle mass cache (recomputed once per second — see updateGFX)
-local cachedMass = 0
-local massUpdateTimer = 0
-
 -- Saved profiles
 local savedProfiles = {}
 local profileDir = nil
@@ -183,26 +179,9 @@ local function updateGFX(dt)
   electrics.values.fueltech_boostMax = turboMax
   electrics.values.fueltech_safetyCut = safetyCut and 1 or 0
 
-  -- Total vehicle mass (kg) — published for the dashboard top bar.
-  -- Cached and refreshed once per second (mass only changes with damage,
-  -- fuel burn, or part swaps — no need for per-frame work).
-  massUpdateTimer = (massUpdateTimer or 0) + dt
-  if cachedMass == 0 or massUpdateTimer > 1.0 then
-    massUpdateTimer = 0
-    local m = 0
-    -- Try the official API first
-    local ok, val = pcall(function() return obj:getTotalMass() end)
-    if ok and type(val) == "number" and val > 0 then
-      m = val
-    elseif v and v.data and v.data.nodes then
-      -- Fallback: sum node weights directly (works on every build)
-      for _, node in pairs(v.data.nodes) do
-        m = m + (node.nodeWeight or 0)
-      end
-    end
-    cachedMass = m
-  end
-  electrics.values.fueltech_mass = cachedMass
+  -- Vehicle mass (fueltech_mass) is published by fueltechDrivetrain —
+  -- that controller attaches to every vehicle, so the WT readout works
+  -- on NA and EV cars too (this one only attaches to forced induction).
 
   -- ── Auto-save throttle ──
   -- markBoostMapDirty() flips a flag on every map mutation. We commit to
