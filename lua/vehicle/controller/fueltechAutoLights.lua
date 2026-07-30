@@ -8,6 +8,16 @@ M.type = "auxiliary"
 local weTurnedOn = false
 local lastKnownState = nil
 
+-- controller.loadControllerExternal unconditionally calls c.init(data);
+-- without this the load pcall throws ("attempt to call field 'init'"),
+-- the controller never registers, and the GE extension retries the
+-- attach forever — spamming 'Can't load controller' into the log for
+-- every vehicle (the v8.4.0 bug).
+local function init(jbeamData)
+  weTurnedOn = false
+  lastKnownState = nil
+end
+
 -- Called from the GE-side fueltech extension once per day/night transition.
 local function setNight(isNight)
   local state = electrics.values.lights_state or 0
@@ -36,6 +46,7 @@ local function setNight(isNight)
   lastKnownState = state
 end
 
+M.init = init
 M.setNight = setNight
 
 return M
