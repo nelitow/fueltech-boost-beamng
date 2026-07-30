@@ -1,24 +1,26 @@
-/* Nelitomorphism-derived tokens, scoped to .ft so they never leak into the
-   rest of BeamNG's UI. Brand orange is kept as the primary accent (it's the
-   mod's identity); everything else — elevation scale, edges, radii,
-   shadows, motion — follows github.com/nelitow/Nelitomorphism-UI-Kit. */
+/* Nelitomorphism tokens (github.com/nelitow/Nelitomorphism-UI-Kit), scoped
+   to .ft so they never leak into the rest of BeamNG's UI. Full kit palette
+   as of v8.6.0: cool hue-250 near-blacks, cyan primary accent, violet
+   secondary — matching the pause-menu card. */
 .ft {
-  --bg-0: #131519;
-  --bg-1: #191c22;
-  --bg-2: #20242c;
-  --bg-3: #292e38;
+  --bg-0: hsl(250, 14%, 7%);
+  --bg-1: hsl(250, 12%, 10%);
+  --bg-2: hsl(250, 11%, 14%);
+  --bg-3: hsl(250, 10%, 18%);
   --edge-1: rgba(255,255,255,0.07);
   --edge-2: rgba(255,255,255,0.13);
-  --fg-1: #eef0f5;
-  --fg-2: #b0b8c8;
-  --fg-3: #7880a0;
+  --fg-1: hsl(250, 18%, 92%);
+  --fg-2: hsl(250, 12%, 72%);
+  --fg-3: hsl(250, 10%, 55%);
 
-  --ft-accent: #ff6600;
-  --ft-accent-dim: rgba(255,102,0,0.14);
-  --ft-ok: #00cc66;
-  --ft-ok-dim: rgba(0,204,102,0.14);
-  --ft-warn: #ffcc00;
-  --ft-warn-dim: rgba(255,204,0,0.14);
+  --ft-accent: #22ccee;                 /* kit cyan  hsl(190,95%,55%) */
+  --ft-accent-dim: rgba(34,204,238,0.14);
+  --ft-accent-2: #a78bfa;               /* kit violet hsl(262,85%,66%) */
+  --ft-accent-2-dim: rgba(167,139,250,0.14);
+  --ft-ok: #34d399;
+  --ft-ok-dim: rgba(52,211,153,0.14);
+  --ft-warn: #fbbf24;
+  --ft-warn-dim: rgba(251,191,36,0.14);
   --ft-danger: #ff3355;
   --ft-danger-dim: rgba(255,51,85,0.14);
 
@@ -72,6 +74,23 @@
 }
 
 .ft-hdr-sep { color: var(--fg-3); opacity: 0.6; }
+
+/* Projected peak torque/power readout — violet to mark it as "our"
+   projection (the vanilla power app can't see wastegate changes). */
+.ft-hdr-pk {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ft-accent-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ft-hdr-pk i {
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 400;
+  color: var(--fg-3);
+  margin-right: 3px;
+}
 .ft-hdr-tgt { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
 
 .ft-peak {
@@ -93,7 +112,7 @@
   user-select: none;
   transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
 }
-.ft-toggle:hover { color: var(--ft-accent); border-color: rgba(255,102,0,0.6); }
+.ft-toggle:hover { color: var(--ft-accent); border-color: rgba(34,204,238,0.6); }
 
 /* TUNE button — pill style, accent colour, so it's the obvious action.
    Toggles to a closed-state look when the overlay is open. */
@@ -101,13 +120,13 @@
   font-size: 11px;
   font-weight: 700;
   color: var(--ft-accent);
-  border: 1px solid rgba(255,102,0,0.6);
+  border: 1px solid rgba(34,204,238,0.6);
   background: var(--ft-accent-dim);
   padding: 3px 10px;
   border-radius: var(--r-pill);
   transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
-.ft-tune-btn:hover { background: rgba(255,102,0,0.22); color: #ffaa55; }
+.ft-tune-btn:hover { background: rgba(34,204,238,0.22); color: #67e0f9; }
 .ft-tune-btn-on   { color: var(--fg-1); border-color: var(--edge-2); background: var(--bg-3); }
 
 /* Fixed-width numeric cells in the telemetry strip. Without these, the row
@@ -128,7 +147,7 @@
   position: absolute;
   z-index: 31;
   background: rgba(19,21,25,0.97);
-  border: 1px solid rgba(255,102,0,0.4);
+  border: 1px solid rgba(34,204,238,0.4);
   border-radius: var(--r-2);
   box-shadow: var(--shadow-overlay);
   padding: 6px;
@@ -166,7 +185,7 @@
   display: inline-block;
 }
 .ft-dot.on  { background: var(--ft-ok); box-shadow: 0 0 8px rgba(0,204,102,0.5); }
-.ft-dot.off { background: #4a3020; }
+.ft-dot.off { background: #3a3a4d; }
 
 .ft-hdr-state {
   font-size: 10px;
@@ -266,8 +285,8 @@
 .ft-btn-on {
   color: var(--ft-accent);
   border-color: var(--ft-accent);
-  background: rgba(41,26,15,0.9);
-  box-shadow: 0 0 12px rgba(255,102,0,0.12);
+  background: hsl(250, 11%, 14%);
+  box-shadow: 0 0 12px rgba(34,204,238,0.12);
 }
 
 /* Two-line buttons (ANTI-LAG): main label on top, smaller clarifying
@@ -317,7 +336,7 @@
 
 @keyframes ft-shift-flash {
   0%   { border-color: var(--ft-danger); box-shadow: inset 0 0 30px rgba(255,51,85,0.08); }
-  100% { border-color: var(--ft-accent); box-shadow: inset 0 0 30px rgba(255,102,0,0.06); }
+  100% { border-color: var(--ft-accent); box-shadow: inset 0 0 30px rgba(34,204,238,0.06); }
 }
 
 /* Drag timer */
@@ -438,8 +457,8 @@
 .ft-btn-als-on {
   color: var(--ft-accent) !important;
   border-color: var(--ft-accent) !important;
-  background: rgba(41,26,15,0.9) !important;
-  box-shadow: 0 0 10px rgba(255,102,0,0.15);
+  background: hsl(250, 11%, 14%) !important;
+  box-shadow: 0 0 10px rgba(34,204,238,0.15);
 }
 .ft-btn-als-firing {
   color: var(--ft-danger) !important;

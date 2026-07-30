@@ -47,37 +47,149 @@ end
 -- Forward declarations
 local loadProfiles
 local sendProfileList
+-- setPreset("AUTOMAX") dispatches to autoMax, which is defined after
+-- setPreset — without this forward declaration the reference compiled as
+-- a nil GLOBAL and the AUTO MAX button errored at runtime (v8.2–v8.5 bug).
+local autoMax
 
--- Preset boost maps
-local presets = {}
 local stockBoostMax = 0  -- saved from the turbo's boostMax at init
 
--- Atmospheric pressure (PSI) — used for the manifold-absolute-pressure (MAP)
--- model. Engine torque scales with absolute pressure, not gauge boost; at
--- 0 PSI gauge an engine still makes its NA torque from the ~14.7 PSI of
--- atmosphere it's breathing.
-local ATM_PSI = 14.7
+-- ── BeamNG's actual turbo torque model ──
+-- From lua/vehicle/powertrain/turbocharger.lua (getTorqueCoefs, line ~522):
+--
+--   torqueCoef(rpm) = 1 + 0.0000087 * boost_Pa * efficiency(rpm)
+--
+-- Torque is LINEAR in gauge pressure — not the manifold-absolute-pressure
+-- ratio we assumed before v8.6.0. getTorqueCoefs() bakes the coef at the
+-- wastegate reference pressure (wastegateStart + wastegateRange/2), so the
+-- per-RPM pressure slope falls out of the coef directly:
+--
+--   slope(rpm) = (coef(rpm) - 1) / refPSI          [torque gain per PSI]
+--   torque(rpm, psi) = baseTorque(rpm) * (1 + slope(rpm) * psi)
+--
+-- which makes both projection and the AUTO MAX inversion exact for the sim.
 
--- Project the torque an engine would make at a given gauge boost, given the
--- stock-with-OEM-boost torque and the OEM boost it was measured at.
---   torqueRatio = (atm + targetBoost) / (atm + stockBoost)
--- so projected torque = stockTorque * torqueRatio.
-local function projectTorqueFromBoost(stockTorqueWithStockBoost, targetGaugePSI, stockGaugePSI)
-  local stockMAP  = ATM_PSI + math.max(0, stockGaugePSI or 0)
-  local targetMAP = ATM_PSI + math.max(0, targetGaugePSI or 0)
-  if stockMAP <= 0 then return stockTorqueWithStockBoost end
-  return stockTorqueWithStockBoost * (targetMAP / stockMAP)
+-- Torque gain per PSI of boost at efficiency 1.0 (0.0000087 per Pascal).
+local K_PSI = 0.0000087 * 6894.757  -- ≈ 0.05998
+
+-- Wastegate reference pressure (PSI) the coef table was computed at.
+-- Reads the turbo jbeam straight from v.data; wastegateStart/-Limit may be
+-- per-gear tables. Mirrors the estimatedWastegateLimit math in the game's
+-- turbocharger.lua (start + range * 0.5; default limit = start + 0.01).
+local function getTurboRefPSI()
+  local t = v.data and v.data.turbocharger
+  if not t then return 0 end
+  local maxStart = 0
+  if type(t.wastegateStart) == "table" then
+    for _, s in pairs(t.wastegateStart) do if s > maxStart then maxStart = s end end
+  elseif type(t.wastegateStart) == "number" then
+    maxStart = t.wastegateStart
+  end
+  if maxStart <= 0 then return 0 end
+  local maxLimit = maxStart + 0.01
+  if type(t.wastegateLimit) == "table" then
+    for _, s in pairs(t.wastegateLimit) do if s > maxLimit then maxLimit = s end end
+  elseif type(t.wastegateLimit) == "number" then
+    maxLimit = math.max(t.wastegateLimit, maxLimit)
+  end
+  return maxStart + (maxLimit - maxStart) * 0.5
 end
 
--- Inverse of projectTorqueFromBoost: given a torque limit and the stock
--- torque/boost reference, what gauge PSI keeps us at exactly the limit?
---   targetMAP = (limit / stockTorque) * stockMAP
---   safeGaugePSI = targetMAP - atm
-local function safeBoostForTorqueLimit(stockTorqueWithStockBoost, torqueLimit, stockGaugePSI)
-  if stockTorqueWithStockBoost <= 0 then return 0 end
-  local stockMAP = ATM_PSI + math.max(0, stockGaugePSI or 0)
-  local targetMAP = (torqueLimit / stockTorqueWithStockBoost) * stockMAP
-  return targetMAP - ATM_PSI
+-- ── Exact turbo model, replicated from the jbeam ──
+-- turboModel is built at init from v.data.turbocharger and replicates the
+-- steady-state part of the game's turbocharger.lua:
+--   * effPoints:   engineDef[i] = {rpm, efficiency, exhaustFraction}
+--   * spool limit: turboAV = sqrt(max(0.9·rpm·rpmToAV/engMaxAV·exh(rpm)·
+--                  maxExhaustPower − frictionCoef, 0)/backPressureCoef),
+--                  then pressurePSI curve at that turbo RPM (line 517-521).
+-- The coef table alone is NOT enough: at spool-limited RPM it bakes in the
+-- spool pressure, not the wastegate reference, so slopes derived from it
+-- under-read in the midband and AUTO MAX would overshoot the torque limit.
+local turboModel = nil
+
+local function lerpPoints(points, x)
+  -- points: sorted {{x1,y1},...}; clamps outside the range
+  local n = #points
+  if n == 0 then return 0 end
+  if x <= points[1][1] then return points[1][2] end
+  if x >= points[n][1] then return points[n][2] end
+  for i = 1, n - 1 do
+    if x >= points[i][1] and x <= points[i + 1][1] then
+      local span = points[i + 1][1] - points[i][1]
+      if span < 1e-9 then return points[i][2] end
+      local t = (x - points[i][1]) / span
+      return points[i][2] + (points[i + 1][2] - points[i][2]) * t
+    end
+  end
+  return points[n][2]
+end
+
+local function numericRows(tbl, cols)
+  -- jbeam curve tables may carry a header row of strings — keep numeric rows
+  local out = {}
+  if type(tbl) ~= "table" then return out end
+  for _, row in ipairs(tbl) do
+    if type(row) == "table" and type(row[1]) == "number" then
+      local r = {}
+      for c = 1, cols do r[c] = row[c] end
+      out[#out + 1] = r
+    end
+  end
+  table.sort(out, function(a, b) return a[1] < b[1] end)
+  return out
+end
+
+local function buildTurboModel()
+  local t = v.data and v.data.turbocharger
+  if not t or not engine then return nil end
+  local defRows = numericRows(t.engineDef, 3)
+  local prsRows = numericRows(t.pressurePSI, 2)
+  if #defRows == 0 or #prsRows == 0 then return nil end
+
+  local effPoints, exhPoints = {}, {}
+  for i, row in ipairs(defRows) do
+    effPoints[i] = { row[1], row[2] }
+    exhPoints[i] = { row[1], math.min(row[3] or 1, 1) }
+  end
+
+  return {
+    effPoints = effPoints,
+    exhPoints = exhPoints,
+    prsPoints = prsRows,
+    maxExhaustPower = t.maxExhaustPower or 1,
+    frictionCoef = t.frictionCoef or 0,
+    backPressureCoef = t.backPressureCoef or 1,
+    refPSI = getTurboRefPSI(),
+    invEngMaxAV = 1 / ((engine.maxRPM or 7000) * 0.10471975),
+  }
+end
+
+local function effAtRPM(rpmVal)
+  if not turboModel then return 0 end
+  return lerpPoints(turboModel.effPoints, rpmVal)
+end
+
+-- Max boost the compressor can physically deliver at this engine RPM
+-- (steady state, full throttle), before the wastegate is even considered.
+local function spoolLimitPSI(rpmVal)
+  if not turboModel then return 999 end
+  local m = turboModel
+  local exh = lerpPoints(m.exhPoints, rpmVal)
+  local drive = 0.9 * rpmVal * 0.10471975 * m.invEngMaxAV * exh * m.maxExhaustPower - m.frictionCoef
+  if drive <= 0 then return 0 end
+  local turboAV = math.sqrt(drive / m.backPressureCoef)
+  local turboRPM = turboAV * 9.549296596425384
+  return lerpPoints(m.prsPoints, turboRPM)
+end
+
+-- Exact projected torque at a target gauge PSI: the delivered pressure is
+-- capped by what the compressor can spool at this RPM, and torque is
+-- linear in delivered pressure (K_PSI · efficiency). `base` is the NA
+-- torque at this RPM (passed in — getBaseTorque is defined further down).
+local function projTorqueExact(rpmVal, targetPSI, base)
+  if not turboModel then return base end
+  local delivered = math.min(math.max(targetPSI, 0), spoolLimitPSI(rpmVal))
+  return base * (1 + K_PSI * effAtRPM(rpmVal) * delivered)
 end
 
 local function lerp(a, b, t)
@@ -301,7 +413,10 @@ local function init(jbeamData)
     fiType = "turbo"
     hasFI = true
     stockBoostMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
-    log("I", "fueltechBoost", "Using turbocharger (setWastegateOffset)")
+    turboModel = buildTurboModel()
+    log("I", "fueltechBoost", "Using turbocharger (setWastegateOffset)" ..
+      (turboModel and string.format(", exact model: ref %.1f PSI, %d eff pts", turboModel.refPSI, #turboModel.effPoints)
+                   or ", exact model unavailable — coef fallback"))
   elseif hasSCReal and engine.supercharger.setBypassPressure then
     fiType = "supercharger"
     hasFI = true
@@ -587,21 +702,33 @@ local function sendPowerCurves()
   local projPeakTorque = 0
   local projPeakHP = 0
 
-  -- Use actual stock boost max for ratio calculations
-  local refBoost = stockBoostMax
-  if refBoost <= 0 then refBoost = electrics.values.turboBoostMax or electrics.values.boostMax or 0 end
+  -- Reference pressure the coef table was computed at. Turbo: wastegate
+  -- start + range/2 from jbeam. Supercharger (no v.data.turbocharger):
+  -- fall back to the device's reported boostMax.
+  local refBoost = getTurboRefPSI()
+  if refBoost <= 0 then
+    refBoost = stockBoostMax > 0 and stockBoostMax
+      or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
+  end
 
   for rpmVal = 500, maxEngRPM, 250 do
     local baseTorque = getBaseTorque(rpmVal)
-    local stockCoef = turboCoefs[rpmVal] or 1
-    local stockTorque = baseTorque * stockCoef
-    local ourBoostPSI = getTargetBoost(rpmVal)
+    local ourBoostPSI = math.max(getTargetBoost(rpmVal), 0)
 
-    -- MAP-based torque projection. The OEM stock torque curve already
-    -- bakes in the stock boost (refBoost), so we scale by the ratio of
-    -- target manifold pressure to stock manifold pressure — both absolute,
-    -- not gauge. At 0 gauge boost this correctly returns NA torque (not 0).
-    local projTorque = projectTorqueFromBoost(stockTorque, ourBoostPSI, refBoost)
+    local stockTorque, projTorque
+    if turboModel then
+      -- Exact spool-aware model: torque = base*(1 + K·eff·delivered),
+      -- delivered = min(target, compressor spool limit at this RPM).
+      stockTorque = projTorqueExact(rpmVal, turboModel.refPSI, baseTorque)
+      projTorque  = projTorqueExact(rpmVal, ourBoostPSI, baseTorque)
+    else
+      -- Supercharger / no jbeam model: derive a linear slope from the
+      -- device coef table at its reference boost.
+      local coef = turboCoefs[rpmVal + 1] or turboCoefs[rpmVal] or 1
+      local slope = refBoost > 0 and (coef - 1) / refBoost or 0
+      stockTorque = baseTorque * coef
+      projTorque  = baseTorque * (1 + slope * ourBoostPSI)
+    end
     local projPowerKw = projTorque * rpmVal * 0.10471975 / 1000
     local stockPowerKw = stockTorque * rpmVal * 0.10471975 / 1000
 
@@ -622,6 +749,7 @@ local function sendPowerCurves()
     baseTorque = baseTorqueCurve,
     basePower = basePowerCurve,
     maxRPM = maxEngRPM,
+    refBoostPSI = refBoost,
     stockPeakTorque = math.floor(peakTorqueNm),
     stockPeakTorqueRPM = math.floor(peakTorqueRPM),
     stockPeakPowerHP = math.floor((peakPowerKw or 0) * 1.34102),
@@ -655,13 +783,14 @@ local function setPreset(name)
     log("I", "fueltechBoost", string.format("MAX preset: %.1f PSI per RPM (hw rated max %.1f)", maxVal, hwMax))
   elseif name == "STOCK" then
     -- Display-only reference line. Actual STOCK behaviour for turbos is a
-    -- native wastegate passthrough (see updateGFX) since turboBoostMax is
-    -- the wastegate's hardware ceiling, not the factory boost level.
-    local sv
-    if fiType == "supercharger" then
-      sv = electrics.values.superchargerBoostMax or stockBoostMax or 0
-    else
-      sv = electrics.values.turboBoostMax or electrics.values.boostMax or stockBoostMax or 0
+    -- native wastegate passthrough (see updateGFX). The line shows the
+    -- factory wastegate target (start + range/2 from jbeam) — NOT
+    -- turboBoostMax, which is the hardware ceiling and reads absurdly
+    -- high on big-turbo builds.
+    local sv = getTurboRefPSI()
+    if sv <= 0 then
+      sv = (fiType == "supercharger" and stockBoostMax > 0) and stockBoostMax
+        or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
     end
     if sv <= 0 then sv = 14 end
     boostTable = {}
@@ -679,7 +808,8 @@ local function setPreset(name)
 end
 
 -- Auto Max: calculate maximum safe boost at each RPM keeping torque under the damage limit
-local function autoMax()
+-- (assigned to the forward-declared local — see top of file)
+autoMax = function()
   if not engine or not hasFI then return end
 
   -- Determine torque limit: prefer maxTorqueRating (damage threshold), fall back to peak torque
@@ -706,35 +836,56 @@ local function autoMax()
     turboCoefs = engine.supercharger.getTorqueCoefs()
   end
 
-  local rpmPoints = {2000, 3000, 4000, 5000, 6000, 7000}
+  -- RPM points spread across the engine's actual usable band. The old
+  -- fixed {2000..7000} list overran maxRPM on short-revving engines (the
+  -- coef lookup fell off the table and silently used 1.0 = NA torque,
+  -- overshooting the safe boost at the top point).
+  local maxEngRPM = engine.maxRPM or 7000
+  local loRPM = 1500
+  local hiRPM = math.max(loRPM + 500, maxEngRPM - 300)
+  local rpmPoints = {}
+  for i = 0, 5 do
+    rpmPoints[i + 1] = math.floor((loRPM + (hiRPM - loRPM) * i / 5) / 100 + 0.5) * 100
+  end
   boostTable = {}
 
-  local refBoost2 = stockBoostMax
-  if refBoost2 <= 0 then refBoost2 = electrics.values.turboBoostMax or electrics.values.boostMax or 0 end
+  local refBoost2 = getTurboRefPSI()
+  if refBoost2 <= 0 then
+    refBoost2 = stockBoostMax > 0 and stockBoostMax
+      or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
+  end
 
-  -- Per-RPM math, MAP-based. Solve for the gauge PSI that puts projected
-  -- torque exactly at torqueLimit, then apply a 95% safety margin and clamp.
+  -- Exact inversion of BeamNG's linear-in-pressure torque model:
+  --   torque = base * (1 + K·eff(rpm) * psi)  →  safePSI = (limit/base - 1)/(K·eff)
+  -- using the efficiency curve straight from the turbo jbeam. The coef
+  -- table CANNOT be used for the slope: at spool-limited RPM it bakes in
+  -- the spool pressure rather than the wastegate reference, under-reading
+  -- the slope and overshooting the safe boost in the midband.
+  -- Then a 95% safety margin, clamp to a sane range, round to 0.5 PSI.
   for i, rpmVal in ipairs(rpmPoints) do
     local baseTorque = getBaseTorque(rpmVal)
-    local stockCoef = turboCoefs[rpmVal] or 1
-    local stockTorque = baseTorque * stockCoef
 
-    local safePSI = 0
-    if stockTorque > 1 then
-      safePSI = safeBoostForTorqueLimit(stockTorque, torqueLimit, refBoost2)
+    local slope
+    if turboModel then
+      slope = K_PSI * effAtRPM(rpmVal)
+    else
+      local coef = turboCoefs[rpmVal + 1] or turboCoefs[rpmVal] or 1
+      slope = refBoost2 > 0 and (coef - 1) / refBoost2 or 0
     end
 
-    -- 95% safety margin, clamp to a sane range
+    local safePSI = 0
+    if baseTorque > 1 and slope > 1e-6 and baseTorque < torqueLimit then
+      safePSI = (torqueLimit / baseTorque - 1) / slope
+    end
+
     safePSI = math.max(0, math.min(safePSI * 0.95, 50))
-    -- Round to nearest 0.5 PSI
     safePSI = math.floor(safePSI * 2) / 2
 
     boostTable[i] = {rpmVal, safePSI}
 
-    -- Sanity-check log entry per RPM (visible in BeamNG console / log)
     log("D", "fueltechBoost",
-      string.format("AutoMax @ %d rpm: stockTq=%.0fNm limit=%.0fNm refBoost=%.1f -> safePSI=%.1f",
-        rpmVal, stockTorque, torqueLimit, refBoost2, safePSI))
+      string.format("AutoMax @ %d rpm: baseTq=%.0fNm slope=%.4f/psi limit=%.0fNm -> safePSI=%.1f (proj %.0fNm)",
+        rpmVal, baseTorque, slope, torqueLimit, safePSI, baseTorque * (1 + slope * safePSI)))
   end
 
   currentPreset = "AUTOMAX"
@@ -760,5 +911,26 @@ M.saveProfile = saveProfile
 M.loadProfile = loadProfile
 M.deleteProfile = deleteProfile
 M.getProfileList = getProfileList
+
+-- Debug / external-tooling state dump (returns a JSON string; also handy
+-- for the pause-menu card and MCP-driven verification).
+M.dumpState = function()
+  local proj = {}
+  for i = 1, #boostTable do
+    local rpmVal, psi = boostTable[i][1], boostTable[i][2]
+    proj[i] = {
+      rpm = rpmVal, psi = psi,
+      projNm = math.floor(projTorqueExact(rpmVal, psi, getBaseTorque(rpmVal)) + 0.5),
+      spoolPSI = turboModel and math.floor(spoolLimitPSI(rpmVal) * 10 + 0.5) / 10 or -1,
+    }
+  end
+  return jsonEncode({
+    preset = currentPreset,
+    fiType = fiType,
+    refPSI = turboModel and turboModel.refPSI or -1,
+    torqueLimit = engine and engine.maxTorqueRating or -1,
+    points = proj,
+  })
+end
 
 return M

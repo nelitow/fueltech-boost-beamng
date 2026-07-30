@@ -7,11 +7,13 @@
     <span style="flex:1"></span>
     <span class="ft-peak" ng-if="hasTurbo" ng-click="resetPeak()">BOOST PK {{peakStr}}</span>
     <span class="ft-hdr-sep" ng-if="hasTurbo">|</span>
+    <span class="ft-hdr-pk" ng-if="hasTurbo && pkNm > 0" title="Projected with current boost map">{{pkNm}}<i>Nm</i> {{pkHp}}<i>HP</i></span>
+    <span class="ft-hdr-sep" ng-if="hasTurbo && pkNm > 0">|</span>
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
     <span class="ft-toggle ft-tune-btn" ng-if="hasTurbo" ng-click="toggleTune()"
           ng-class="{'ft-tune-btn-on': tuneOpen}">{{tuneOpen?'✕ CLOSE':'⚙ TUNE BOOST MAP'}}</span>
-    <span class="ft-ver">8.5.0</span>
+    <span class="ft-ver">8.6.0</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->

@@ -8,11 +8,17 @@
       <span style="flex:1"></span>
       <span v-if="S.hasTurbo" class="ft-peak" @click="resetPeak">BOOST PK {{ S.peakStr }}</span>
       <span v-if="S.hasTurbo" class="ft-hdr-sep">|</span>
+      <!-- Projected peaks from OUR boost map — the vanilla torque-curve app
+           doesn't reflect wastegate changes, so this is the only live source -->
+      <span v-if="S.hasTurbo && S.pkNm > 0" class="ft-hdr-pk" :title="'Projected with current boost map. Stock: ' + S.stockPkNm + 'Nm / ' + S.stockPkHp + 'HP'">
+        {{ S.pkNm }}<i>Nm</i> {{ S.pkHp }}<i>HP</i>
+      </span>
+      <span v-if="S.hasTurbo && S.pkNm > 0" class="ft-hdr-sep">|</span>
       <span v-if="S.hasTurbo" class="ft-dot" :class="S.active ? 'on' : 'off'"></span>
       <span v-if="S.hasTurbo" class="ft-hdr-state">{{ S.active ? 'ACTIVE' : 'STANDBY' }}</span>
       <span v-if="S.hasTurbo" class="ft-toggle ft-tune-btn" :class="{ 'ft-tune-btn-on': S.tuneOpen }"
             @click="toggleTune">{{ S.tuneOpen ? '✕ CLOSE' : '⚙ TUNE BOOST MAP' }}</span>
-      <span class="ft-ver">8.5.0</span>
+      <span class="ft-ver">8.6.0</span>
     </div>
 
     <!-- Warning bar (overlay, z-index above content) -->
@@ -136,6 +142,7 @@ const S = reactive({
   warnings: [],
   drag100str: "--.---", drag200str: "--.---",
   drag100done: false, drag200done: false,
+  pkNm: 0, pkHp: 0, stockPkNm: 0, stockPkHp: 0,
 })
 
 /* ==================== PLAIN STATE ==================== */
@@ -154,7 +161,6 @@ const shiftRpmPct = 0.9
 let dragActive = false, dragStart = 0, drag100t = 0, drag200t = 0
 let map = [[2000, 5], [3000, 10], [4000, 15], [5000, 20], [6000, 20], [7000, 18]]
 let pwrData = null
-let stockTorqueArr = null, stockPowerArr = null, stockMaxRPM = 0
 let safetyCut = false, lastElectrics = null
 let tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
 
@@ -162,19 +168,14 @@ let tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
 events.on("fueltechBoostTable", d => {
   if (d && d.length) { map = []; for (let i = 0; i < d.length; i++) map.push([d[i].rpm, d[i].psi]) }
 })
-events.on("fueltechPowerCurves", d => { if (d) { pwrData = d; drawPower() } })
-events.on("TorqueCurveChanged", data => {
-  if (!data || !data.curves) return
-  stockMaxRPM = data.maxRPM || 7000
-  let lastKey = null
-  for (const key in data.curves) {
-    if (lastKey === null || parseInt(key) > parseInt(lastKey)) lastKey = key
-  }
-  if (lastKey !== null && data.curves[lastKey]) {
-    stockTorqueArr = data.curves[lastKey].torque
-    stockPowerArr = data.curves[lastKey].power
-  }
-  if (stockTorqueArr) drawPower()
+events.on("fueltechPowerCurves", d => {
+  if (!d) return
+  pwrData = d
+  S.pkNm = d.projPeakTorque || 0
+  S.pkHp = d.projPeakHP || 0
+  S.stockPkNm = d.stockPeakTorque || 0
+  S.stockPkHp = d.stockPeakPowerHP || 0
+  drawPower()
 })
 events.on("fueltechDriveModesInfo", data => {
   if (!data || !data.length) return
@@ -194,12 +195,12 @@ events.on("DamageData", data => {
       if (typeof v === "object" && v !== null) scan(v, key)
       else if (v && v !== 0 && v !== false) {
         const label = damageLabels[key] || prettifyDamageKey(key)
-        let color = "#ff6600"
+        let color = "#22ccee"
         const vs = String(v).toLowerCase()
         if (vs === "true" || vs === "1") color = "#ff4466"
-        else if (typeof v === "number" && v > 50) color = "#ff2244"
-        else if (typeof v === "number" && v > 20) color = "#ff6600"
-        else color = "#ffcc00"
+        else if (typeof v === "number" && v > 50) color = "#ff3355"
+        else if (typeof v === "number" && v > 20) color = "#22ccee"
+        else color = "#fbbf24"
         log.push({ text: label, color })
       }
     }
@@ -208,7 +209,6 @@ events.on("DamageData", data => {
   S.damageLog = log
 })
 events.on("VehicleFocusChanged", () => {
-  stockTorqueArr = null; stockPowerArr = null
   requestData()
 })
 
@@ -259,7 +259,6 @@ function requestData() {
   luaCall('controller.getControllerSafe("fueltechBoostController").getBoostTable()')
   luaCall('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()')
   luaCall('controller.getControllerSafe("fueltechDrivetrain").getInfo()')
-  luaCall('controller.mainController.sendTorqueData()')
 }
 
 function setPreset(n) {
@@ -348,7 +347,7 @@ let lay = null
 
 function q(sel) { return rootRef.value ? rootRef.value.querySelector(sel) : null }
 
-const GRAPH_BG = "background:rgba(6,8,14,0.6);border:1px solid rgba(24,28,40,0.3);border-radius:8px"
+const GRAPH_BG = "background:rgba(15,14,23,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:8px"
 
 function doLayout(W, H) {
   if (W < 200 || H < 120) return null
@@ -386,7 +385,7 @@ function doLayout(W, H) {
   box(q(".ft-hdr"), 1, 12, topY, hdrH,
     "display:flex;align-items:center;gap:10px;background:rgba(10,12,20,0.82);border:1px solid rgba(40,46,66,0.5);border-radius:6px;padding:0 14px")
   box(q(".ft-telem"), 1, 12, telY, telH,
-    "display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px")
+    "display:flex;align-items:center;gap:12px;padding:0 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:4px")
 
   const warnEl = q(".ft-warn")
   if (warnEl) {
@@ -394,7 +393,7 @@ function doLayout(W, H) {
   }
   const dmgEl = q(".ft-dmg")
   if (dmgEl) {
-    dmgEl.style.cssText = "position:absolute;box-sizing:border-box;z-index:19;left:" + G + "px;top:" + (rowY + cl(telH, 14, 24) + 2) + "px;width:" + usableW + "px;max-height:" + (telH * 2) + "px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(40,46,66,0.3);border-radius:4px"
+    dmgEl.style.cssText = "position:absolute;box-sizing:border-box;z-index:19;left:" + G + "px;top:" + (rowY + cl(telH, 14, 24) + 2) + "px;width:" + usableW + "px;max-height:" + (telH * 2) + "px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:4px"
   }
 
   if (hasTurbo) {
@@ -425,7 +424,7 @@ function doLayout(W, H) {
     const minY = 0, maxY = H - 30
     const tuneX = cl(baseX + tuneOffsetX, minX, maxX)
     const tuneY = cl(baseY + tuneOffsetY, minY, maxY)
-    tunePanel.style.cssText = "position:absolute;z-index:31;box-sizing:border-box;left:" + tuneX + "px;top:" + tuneY + "px;width:" + tuneW + "px;height:" + tuneH + "px;background:rgba(10,12,20,0.96);border:1px solid rgba(255,102,0,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden"
+    tunePanel.style.cssText = "position:absolute;z-index:31;box-sizing:border-box;left:" + tuneX + "px;top:" + tuneY + "px;width:" + tuneW + "px;height:" + tuneH + "px;background:rgba(17,16,26,0.96);border:1px solid rgba(34,204,238,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden"
 
     const titleH = 22, pad = 6
     const inW = tuneW - pad * 2
@@ -506,13 +505,13 @@ function drawBarGauge(ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
   const barH2 = cl(h * 0.12, 3, 8)
   const pct = cl(value / maxV, 0, 1)
 
-  ctx.fillStyle = "rgba(10,12,20,0.5)"
+  ctx.fillStyle = "rgba(15,14,23,0.55)"
   ctx.fillRect(0, 0, w, h)
-  ctx.strokeStyle = "rgba(40,46,66,0.3)"; ctx.lineWidth = 1
+  ctx.strokeStyle = "rgba(255,255,255,0.07)"; ctx.lineWidth = 1
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
 
   ctx.font = "700 " + labelFs.toFixed(0) + "px Consolas,monospace"
-  ctx.fillStyle = "#6a7498"; ctx.textAlign = "left"; ctx.textBaseline = "top"
+  ctx.fillStyle = "#8b8fa8"; ctx.textAlign = "left"; ctx.textBaseline = "top"
   ctx.fillText(label, pad, pad)
 
   ctx.font = "700 " + valFs.toFixed(0) + "px Consolas,monospace"
@@ -526,12 +525,12 @@ function drawBarGauge(ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
   const barY2 = h - pad - barH2
   const barX = pad, barW = w - pad * 2
 
-  ctx.fillStyle = "rgba(30,34,50,0.6)"
+  ctx.fillStyle = "rgba(42,42,61,0.6)"
   ctx.fillRect(barX, barY2, barW, barH2)
 
   if (pct > 0.005) {
     const fillW = barW * pct
-    const ac = pct < 0.6 ? c1 : pct < 0.85 ? c2 : "#ff2244"
+    const ac = pct < 0.6 ? c1 : pct < 0.85 ? c2 : "#ff3355"
     ctx.fillStyle = ac
     ctx.fillRect(barX, barY2, fillW, barH2)
     ctx.shadowColor = ac; ctx.shadowBlur = barH2 * 3
@@ -543,8 +542,8 @@ function drawBarGauge(ctx, w, h, value, maxV, valTxt, unit, label, c1, c2) {
 function drawOilH2oGauges() {
   initCanvases(); if (!lay) return
   let ms
-  if (ctxOil) { ms = sizeCvs(cvsOil, lay.oilW, lay.oilH); if (ms) drawBarGauge(ctxOil, ms.w, ms.h, oilT, 150, Math.round(oilT).toString(), "°C", "OIL", "#00aa44", "#ff8800") }
-  if (ctxH2o) { ms = sizeCvs(cvsH2o, lay.h2oW, lay.h2oH); if (ms) drawBarGauge(ctxH2o, ms.w, ms.h, h2oT, 130, Math.round(h2oT).toString(), "°C", "H2O", "#0077ee", "#ff3344") }
+  if (ctxOil) { ms = sizeCvs(cvsOil, lay.oilW, lay.oilH); if (ms) drawBarGauge(ctxOil, ms.w, ms.h, oilT, 150, Math.round(oilT).toString(), "°C", "OIL", "#34d399", "#fbbf24") }
+  if (ctxH2o) { ms = sizeCvs(cvsH2o, lay.h2oW, lay.h2oH); if (ms) drawBarGauge(ctxH2o, ms.w, ms.h, h2oT, 130, Math.round(h2oT).toString(), "°C", "H2O", "#38bdf8", "#f87171") }
 }
 
 /* ==================== G-FORCE ==================== */
@@ -559,17 +558,17 @@ function drawGForce() {
   const r = Math.min(w, h) * 0.4
   const maxG = 2.0
 
-  ctx.fillStyle = "rgba(10,12,20,0.5)"
+  ctx.fillStyle = "rgba(15,14,23,0.55)"
   ctx.fillRect(0, 0, w, h)
-  ctx.strokeStyle = "rgba(40,46,66,0.3)"; ctx.lineWidth = 1
+  ctx.strokeStyle = "rgba(255,255,255,0.07)"; ctx.lineWidth = 1
   ctx.strokeRect(0.5, 0.5, w - 1, h - 1)
 
   const lfs = cl(fs * 0.7, 10, 12)
   ctx.font = "700 " + lfs.toFixed(0) + "px Consolas,monospace"
-  ctx.fillStyle = "#6a7498"; ctx.textAlign = "left"; ctx.textBaseline = "top"
+  ctx.fillStyle = "#8b8fa8"; ctx.textAlign = "left"; ctx.textBaseline = "top"
   ctx.fillText("G-FORCE", 6, 4)
 
-  ctx.strokeStyle = "#2a3048"; ctx.lineWidth = 0.5
+  ctx.strokeStyle = "#2a2a3d"; ctx.lineWidth = 0.5
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.283); ctx.lineWidth = 1; ctx.stroke()
   ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke()
   ctx.beginPath(); ctx.arc(cx, cy, r * 0.5, 0, 6.283); ctx.stroke()
@@ -577,7 +576,7 @@ function drawGForce() {
   const gx = cl(gForceX / maxG, -1, 1) * r
   const gy = cl(-gForceY / maxG, -1, 1) * r
   const gMag = Math.sqrt(gForceX * gForceX + gForceY * gForceY)
-  const dotC = gMag < 0.5 ? "#00ff88" : gMag < 1.2 ? "#ffcc00" : "#ff2244"
+  const dotC = gMag < 0.5 ? "#34d399" : gMag < 1.2 ? "#fbbf24" : "#ff3355"
   const dotR = cl(r * 0.09, 3, 8)
   ctx.shadowColor = dotC; ctx.shadowBlur = dotR * 3
   ctx.beginPath(); ctx.arc(cx + gx, cy + gy, dotR, 0, 6.283); ctx.fillStyle = dotC; ctx.fill()
@@ -593,11 +592,11 @@ function drawGrid(ctx, w, h, maxX, maxY, extraRight) {
   const pr = extraRight ? Math.round(fs * 2.8) : 6
   const p = { l: pl, r: pr, t: 6, b: Math.round(fs * 1.8) }, gw = w - p.l - p.r, gh = h - p.t - p.b
   const nY = h > 100 ? 4 : 2, nX = w > 200 ? 4 : 2
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = "rgba(6,8,14,0.7)"; ctx.fillRect(0, 0, w, h)
-  ctx.strokeStyle = "#1a2030"; ctx.lineWidth = 0.5
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = "rgba(15,14,23,0.7)"; ctx.fillRect(0, 0, w, h)
+  ctx.strokeStyle = "#232336"; ctx.lineWidth = 0.5
   for (let i = 0; i <= nY; i++) { const yy = p.t + gh / nY * i; ctx.beginPath(); ctx.moveTo(p.l, yy); ctx.lineTo(w - p.r, yy); ctx.stroke() }
   for (let j = 0; j <= nX * 2; j++) { const xx = p.l + gw / (nX * 2) * j; ctx.beginPath(); ctx.moveTo(xx, p.t); ctx.lineTo(xx, p.t + gh); ctx.stroke() }
-  ctx.font = fs.toFixed(0) + "px Consolas,monospace"; ctx.fillStyle = "#5a6280"; ctx.textAlign = "right"
+  ctx.font = fs.toFixed(0) + "px Consolas,monospace"; ctx.fillStyle = "#8b8fa8"; ctx.textAlign = "right"
   for (let i = 0; i <= nY; i++) { ctx.fillText((maxY - maxY / nY * i).toFixed(0), p.l - 3, p.t + gh / nY * i + fs * 0.35) }
   ctx.textAlign = "center"
   for (let i = 0; i <= nX; i++) { const rv = maxX / nX * i; ctx.fillText(rv >= 1000 ? (rv / 1000).toFixed(0) + "k" : "0", p.l + gw / nX * i, h - p.b + fs + 2) }
@@ -632,20 +631,20 @@ function drawMiniBoostMap() {
   for (let s = 0; s <= steps; s++) ctx.lineTo(mx(stepRpm * s), my(lerpMap(stepRpm * s)))
   ctx.lineTo(mx(maxRPM), my(0)); ctx.closePath()
   const grad = ctx.createLinearGradient(0, pad, 0, pad + ph)
-  grad.addColorStop(0, "rgba(255,102,0,0.32)")
-  grad.addColorStop(1, "rgba(255,102,0,0.02)")
+  grad.addColorStop(0, "rgba(34,204,238,0.32)")
+  grad.addColorStop(1, "rgba(34,204,238,0.02)")
   ctx.fillStyle = grad; ctx.fill()
   ctx.beginPath(); ctx.moveTo(mx(0), my(lerpMap(0)))
   for (let s2 = 1; s2 <= steps; s2++) ctx.lineTo(mx(stepRpm * s2), my(lerpMap(stepRpm * s2)))
-  ctx.strokeStyle = "#ff8833"; ctx.lineWidth = 1.5
+  ctx.strokeStyle = "#67e0f9"; ctx.lineWidth = 1.5
   ctx.lineJoin = "round"; ctx.stroke()
 
   if (S.active && rpm > 50) {
     const cxp = cl(mx(rpm), pad, pad + pw)
-    ctx.strokeStyle = "rgba(0,187,255,0.5)"; ctx.lineWidth = 1
+    ctx.strokeStyle = "rgba(167,139,250,0.5)"; ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(cxp, pad); ctx.lineTo(cxp, pad + ph); ctx.stroke()
     const cyp = cl(my(boost), pad, pad + ph)
-    ctx.fillStyle = "#00bbff"
+    ctx.fillStyle = "#a78bfa"
     ctx.beginPath(); ctx.arc(cxp, cyp, 3, 0, 6.283); ctx.fill()
   }
 
@@ -667,17 +666,17 @@ function drawBoostMap() {
 
   if (boostMax > 0 && boostMax < maxPSI) {
     const limY = ty(boostMax)
-    ctx.fillStyle = "rgba(255, 170, 0, 0.05)"
+    ctx.fillStyle = "rgba(167,139,250,0.06)"
     ctx.fillRect(BP.l, BP.t, BGW, limY - BP.t)
     ctx.save()
     ctx.setLineDash([6, 4])
-    ctx.strokeStyle = "rgba(255, 170, 0, 0.55)"
+    ctx.strokeStyle = "rgba(167,139,250,0.55)"
     ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(BP.l, limY); ctx.lineTo(BP.l + BGW, limY); ctx.stroke()
     ctx.restore()
     ctx.font = cl(g.fs, 9, 12).toFixed(0) + "px Consolas,monospace"
     ctx.textAlign = "right"; ctx.textBaseline = "bottom"
-    ctx.fillStyle = "#ffaa44"
+    ctx.fillStyle = "#a78bfa"
     ctx.fillText("TURBO RATED MAX " + boostMax.toFixed(1) + " PSI", BP.l + BGW - 4, limY - 2)
   }
 
@@ -686,21 +685,21 @@ function drawBoostMap() {
   for (let i = 0; i <= steps; i++) ctx.lineTo(tx(step * i), ty(lerpMap(step * i)))
   ctx.lineTo(tx(maxRPM), ty(0)); ctx.closePath()
   const grd = ctx.createLinearGradient(0, BP.t, 0, BP.t + BGH)
-  grd.addColorStop(0, "rgba(255,102,0,0.1)"); grd.addColorStop(1, "rgba(255,102,0,0)")
+  grd.addColorStop(0, "rgba(34,204,238,0.1)"); grd.addColorStop(1, "rgba(34,204,238,0)")
   ctx.fillStyle = grd; ctx.fill()
 
   ctx.beginPath(); ctx.moveTo(tx(0), ty(lerpMap(0)))
   for (let i = 1; i <= steps; i++) ctx.lineTo(tx(step * i), ty(lerpMap(step * i)))
   const lw = cl(BMW2 * 0.004, 1, 2.5)
-  ctx.strokeStyle = "#ff6600"; ctx.lineWidth = lw; ctx.lineJoin = "round"; ctx.stroke()
+  ctx.strokeStyle = "#22ccee"; ctx.lineWidth = lw; ctx.lineJoin = "round"; ctx.stroke()
 
   const dr = cl(BMW2 * 0.008, 3, 7)
   for (let i = 0; i < map.length; i++) {
     const bx = tx(map[i][0]), by = ty(map[i][1]), hot = (i === hoverIdx || i === dragIdx)
-    if (hot) { ctx.beginPath(); ctx.arc(bx, by, dr + 6, 0, 6.283); ctx.fillStyle = "rgba(255,102,0,0.08)"; ctx.fill() }
-    ctx.beginPath(); ctx.arc(bx, by, dr + 1, 0, 6.283); ctx.strokeStyle = hot ? "#ff8833" : "rgba(255,102,0,0.3)"; ctx.lineWidth = 1; ctx.stroke()
-    ctx.beginPath(); ctx.arc(bx, by, dr, 0, 6.283); ctx.fillStyle = hot ? "#ff8833" : "#ff6600"; ctx.fill()
-    ctx.beginPath(); ctx.arc(bx, by, dr * 0.3, 0, 6.283); ctx.fillStyle = "rgba(6,8,14,0.9)"; ctx.fill()
+    if (hot) { ctx.beginPath(); ctx.arc(bx, by, dr + 6, 0, 6.283); ctx.fillStyle = "rgba(34,204,238,0.08)"; ctx.fill() }
+    ctx.beginPath(); ctx.arc(bx, by, dr + 1, 0, 6.283); ctx.strokeStyle = hot ? "#67e0f9" : "rgba(34,204,238,0.3)"; ctx.lineWidth = 1; ctx.stroke()
+    ctx.beginPath(); ctx.arc(bx, by, dr, 0, 6.283); ctx.fillStyle = hot ? "#67e0f9" : "#22ccee"; ctx.fill()
+    ctx.beginPath(); ctx.arc(bx, by, dr * 0.3, 0, 6.283); ctx.fillStyle = "rgba(15,14,23,0.9)"; ctx.fill()
     if (hot) {
       ctx.font = "bold " + cl(g.fs + 1, 10, 14).toFixed(0) + "px Consolas,monospace"
       ctx.fillStyle = "#dde0ec"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"
@@ -711,68 +710,35 @@ function drawBoostMap() {
   if (!S.active || rpm < 50) return
   const cx2 = cl(tx(rpm), BP.l, BMW2 - BP.r), cy2 = cl(ty(boost), BP.t, BP.t + BGH), tgy = cl(ty(tgt), BP.t, BP.t + BGH)
   const vg = ctx.createLinearGradient(0, BP.t, 0, BP.t + BGH)
-  vg.addColorStop(0, "rgba(0,255,136,0)"); vg.addColorStop(0.5, "rgba(0,255,136,0.05)"); vg.addColorStop(1, "rgba(0,255,136,0)")
+  vg.addColorStop(0, "rgba(167,139,250,0)"); vg.addColorStop(0.5, "rgba(167,139,250,0.05)"); vg.addColorStop(1, "rgba(167,139,250,0)")
   ctx.fillStyle = vg; ctx.fillRect(cx2 - 0.5, BP.t, 1, BGH)
-  ctx.beginPath(); ctx.arc(cx2, tgy, dr * 1.5, 0, 6.283); ctx.strokeStyle = "rgba(255,102,0,0.4)"; ctx.lineWidth = cl(lw * 0.5, 0.5, 1); ctx.stroke()
-  const dotC = "#00bbff"
+  ctx.beginPath(); ctx.arc(cx2, tgy, dr * 1.5, 0, 6.283); ctx.strokeStyle = "rgba(34,204,238,0.4)"; ctx.lineWidth = cl(lw * 0.5, 0.5, 1); ctx.stroke()
+  const dotC = "#a78bfa"
   ctx.shadowColor = dotC; ctx.shadowBlur = cl(BMW2 * 0.01, 3, 10)
   ctx.beginPath(); ctx.arc(cx2, cy2, dr * 1.2, 0, 6.283); ctx.fillStyle = dotC; ctx.fill(); ctx.shadowBlur = 0
 }
 
 /* ==================== POWER / TORQUE ==================== */
+// Renders the lua-computed curves only (fueltechPowerCurves). The lua side
+// replicates BeamNG's exact turbo model (spool-aware, efficiency-curve
+// based) — the old JS-side MAP approximation over TorqueCurveChanged data
+// was wrong on both the scaling law and the reference boost, so it's gone.
 function drawPower() {
   initCanvases(); if (!ctxPwr || !lay) return
-  if (!stockTorqueArr && !pwrData) return
+  if (!pwrData) return
   const sz = sizeCvs(cvsPwr, lay.pwrW, lay.graphH); if (!sz) return
   const w = sz.w, h = sz.h, ctx = ctxPwr
 
-  const eR = stockMaxRPM || (pwrData && pwrData.maxRPM) || 7000
-  const useNative = !!(stockTorqueArr && stockTorqueArr.length > 100)
+  const eR = (pwrData && pwrData.maxRPM) || 7000
 
-  let td = [], pd = [], bt = [], bp = []
+  const td = pwrData.torque || [], pd = pwrData.power || []
+  const bt = pwrData.baseTorque || [], bp = pwrData.basePower || []
+  const stockPkNm = pwrData.stockPeakTorque || 0
+  const projPkNm = pwrData.projPeakTorque || 0
+  const projPkHP = pwrData.projPeakHP || 0
   let maxNm = 0, maxHP = 0
-  let stockPkNm = 0, projPkNm = 0, projPkHP = 0
-
-  if (useNative) {
-    const step = 250
-    const ATM_PSI = 14.7
-    const stockBoost = boostMax > 0 ? boostMax : 0
-    const stockMAP = ATM_PSI + (stockBoost > 0 ? stockBoost : 0)
-    for (let r = 0; r <= eR; r += step) {
-      const idx = Math.min(r, stockTorqueArr.length - 1)
-      const sNm = stockTorqueArr[idx] || 0
-      const sPkw = stockPowerArr ? (stockPowerArr[idx] || 0) : (sNm * r * 0.10471975 / 1000)
-      const sHP = sPkw * 1.34102
-
-      bt.push({ rpm: r, nm: sNm })
-      bp.push({ rpm: r, hp: sHP })
-      if (sNm > stockPkNm) stockPkNm = sNm
-
-      let ourTarget = lerpMap(r)
-      if (ourTarget < 0) ourTarget = 0
-      const targetMAP = ATM_PSI + ourTarget
-      const torqueRatio = stockMAP > 0 ? (targetMAP / stockMAP) : 1
-      const pNm = sNm * torqueRatio
-      const pHP = sHP * torqueRatio
-
-      td.push({ rpm: r, nm: pNm })
-      pd.push({ rpm: r, hp: pHP })
-      if (pNm > projPkNm) projPkNm = pNm
-      if (pHP > projPkHP) projPkHP = pHP
-
-      if (sNm > maxNm) maxNm = sNm
-      if (pNm > maxNm) maxNm = pNm
-      if (sHP > maxHP) maxHP = sHP
-      if (pHP > maxHP) maxHP = pHP
-    }
-  } else if (pwrData) {
-    td = pwrData.torque || []; pd = pwrData.power || []; bt = pwrData.baseTorque || []; bp = pwrData.basePower || []
-    stockPkNm = pwrData.stockPeakTorque || 0
-    projPkNm = pwrData.projPeakTorque || 0
-    projPkHP = pwrData.projPeakHP || 0
-    for (let i = 0; i < td.length; i++) { if (td[i].nm > maxNm) maxNm = td[i].nm; if (i < pd.length && pd[i].hp > maxHP) maxHP = pd[i].hp }
-    for (let i = 0; i < bt.length; i++) { if (bt[i].nm > maxNm) maxNm = bt[i].nm; if (i < bp.length && bp[i].hp > maxHP) maxHP = bp[i].hp }
-  }
+  for (let i = 0; i < td.length; i++) { if (td[i].nm > maxNm) maxNm = td[i].nm; if (i < pd.length && pd[i].hp > maxHP) maxHP = pd[i].hp }
+  for (let i = 0; i < bt.length; i++) { if (bt[i].nm > maxNm) maxNm = bt[i].nm; if (i < bp.length && bp[i].hp > maxHP) maxHP = bp[i].hp }
 
   if (!td.length || !pd.length) return
 
@@ -804,10 +770,10 @@ function drawPower() {
     const spY = tty(stockPkNm)
     ctx.save(); ctx.setLineDash([3, 5])
     ctx.beginPath(); ctx.moveTo(gp.l, spY); ctx.lineTo(gp.l + ggw, spY)
-    ctx.strokeStyle = "rgba(255,160,60,0.25)"; ctx.lineWidth = 0.8; ctx.stroke()
+    ctx.strokeStyle = "rgba(167,139,250,0.35)"; ctx.lineWidth = 0.8; ctx.stroke()
     ctx.restore()
     ctx.font = cl(g.fs - 1, 10, 12).toFixed(0) + "px Consolas,monospace"
-    ctx.fillStyle = "rgba(255,160,60,0.4)"; ctx.textAlign = "left"
+    ctx.fillStyle = "rgba(167,139,250,0.5)"; ctx.textAlign = "left"
     ctx.fillText("STOCK " + Math.round(stockPkNm) + " Nm", gp.l + 3, spY - 2)
   }
 
@@ -817,16 +783,16 @@ function drawPower() {
     for (let i = 0; i < data.length; i++) { const px = ttx(data[i].rpm), py = yF(data[i][key]); if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py) }
     ctx.strokeStyle = col; ctx.lineWidth = lw2; ctx.lineJoin = "round"; ctx.stroke(); ctx.restore()
   }
-  dc(bt, tty, "nm", "rgba(255,100,100,0.15)", true); dc(bp, pty, "hp", "rgba(100,150,255,0.15)", true)
-  dc(td, tty, "nm", "#ff6666", false); dc(pd, pty, "hp", "#6699ff", false)
+  dc(bt, tty, "nm", "rgba(248,113,113,0.18)", true); dc(bp, pty, "hp", "rgba(34,204,238,0.18)", true)
+  dc(td, tty, "nm", "#f87171", false); dc(pd, pty, "hp", "#22ccee", false)
 
   const lx = gp.l + 8, ly = gp.t + 10, lfs = cl(g.fs, 10, 14).toFixed(0)
   ctx.font = lfs + "px Consolas,monospace"; ctx.textAlign = "left"
-  ctx.fillStyle = "#ff6666"; ctx.fillRect(lx, ly - 5, 9, 3)
+  ctx.fillStyle = "#f87171"; ctx.fillRect(lx, ly - 5, 9, 3)
   ctx.fillText("TQ Nm" + (projPkNm > 0 ? " (" + Math.round(projPkNm) + ")" : ""), lx + 14, ly)
-  ctx.fillStyle = "#6699ff"; ctx.fillRect(lx, ly + parseInt(lfs) + 2, 9, 3)
+  ctx.fillStyle = "#22ccee"; ctx.fillRect(lx, ly + parseInt(lfs) + 2, 9, 3)
   ctx.fillText("HP" + (projPkHP > 0 ? " (" + Math.round(projPkHP) + ")" : ""), lx + 14, ly + parseInt(lfs) + 6)
-  ctx.fillStyle = "#6a7498"
+  ctx.fillStyle = "#8b8fa8"
   ctx.fillText("-- stock", lx + 14, ly + parseInt(lfs) * 2 + 10)
 
   if (tqRating > 0) {
@@ -839,58 +805,46 @@ function drawPower() {
     }
   }
 
-  ctx.textAlign = "left"; ctx.fillStyle = "#5a6280"
+  ctx.textAlign = "left"; ctx.fillStyle = "#8b8fa8"
   const nY = h > 100 ? 4 : 2
   for (let i = 0; i <= nY; i++) { ctx.fillText((maxHP - maxHP / nY * i).toFixed(0), w - gp.r + 3, gp.t + ggh / nY * i + g.fs * 0.35) }
 
   if (rpm > 50) {
     const rx = ttx(rpm)
     const vg2 = ctx.createLinearGradient(0, gp.t, 0, gp.t + ggh)
-    vg2.addColorStop(0, "rgba(0,255,136,0)"); vg2.addColorStop(0.5, "rgba(0,255,136,0.04)"); vg2.addColorStop(1, "rgba(0,255,136,0)")
+    vg2.addColorStop(0, "rgba(167,139,250,0)"); vg2.addColorStop(0.5, "rgba(167,139,250,0.04)"); vg2.addColorStop(1, "rgba(167,139,250,0)")
     ctx.fillStyle = vg2; ctx.fillRect(rx - 0.5, gp.t, 1, ggh)
 
+    // Live estimate: the projected curve at current RPM scaled by engine
+    // load. The curve already encodes the exact boost→torque model, so no
+    // boost-ratio scaling here (that was the old wrong-model shortcut).
     let liveNm = 0, liveHP = 0
-    if (useNative && stockTorqueArr) {
-      const rpmIdx = Math.floor(rpm)
-      if (rpmIdx >= 0 && rpmIdx < stockTorqueArr.length) {
-        const sNmLive = stockTorqueArr[rpmIdx] || 0
-        const sPkwLive = stockPowerArr ? (stockPowerArr[rpmIdx] || 0) : (sNmLive * rpm * 0.10471975 / 1000)
-        const refB = boostMax > 0 ? boostMax : 1
-        const liveRatio = boost > 0 ? (boost / refB) : 1
-        liveNm = sNmLive * liveRatio * Math.max(engineLoad, 0.01)
-        liveHP = sPkwLive * 1.34102 * liveRatio * Math.max(engineLoad, 0.01)
-      }
-    } else {
-      for (let li = 0; li < bt.length - 1; li++) {
-        if (rpm >= bt[li].rpm && rpm <= bt[li + 1].rpm) {
-          const lt = (rpm - bt[li].rpm) / (bt[li + 1].rpm - bt[li].rpm)
-          const bNm = bt[li].nm + (bt[li + 1].nm - bt[li].nm) * lt
-          const bHP = bp[li].hp + (bp[li + 1].hp - bp[li].hp) * lt
-          const bRef = boostMax > 0 ? boostMax : 1
-          const aRatio = boost > 0 ? boost / bRef : 1
-          liveNm = bNm * aRatio * Math.max(engineLoad, 0.01)
-          liveHP = bHP * aRatio * Math.max(engineLoad, 0.01)
-          break
-        }
+    for (let li = 0; li < td.length - 1; li++) {
+      if (rpm >= td[li].rpm && rpm <= td[li + 1].rpm) {
+        const lt = (rpm - td[li].rpm) / (td[li + 1].rpm - td[li].rpm)
+        const load = Math.max(engineLoad, 0.01)
+        liveNm = (td[li].nm + (td[li + 1].nm - td[li].nm) * lt) * load
+        liveHP = (pd[li].hp + (pd[li + 1].hp - pd[li].hp) * lt) * load
+        break
       }
     }
 
     const dotR2 = cl(w * 0.008, 3, 6)
     if (liveNm > 0) {
-      ctx.shadowColor = "#ff6666"; ctx.shadowBlur = dotR2 * 3
-      ctx.beginPath(); ctx.arc(rx, tty(liveNm), dotR2, 0, 6.283); ctx.fillStyle = "#ff6666"; ctx.fill()
+      ctx.shadowColor = "#f87171"; ctx.shadowBlur = dotR2 * 3
+      ctx.beginPath(); ctx.arc(rx, tty(liveNm), dotR2, 0, 6.283); ctx.fillStyle = "#f87171"; ctx.fill()
       ctx.shadowBlur = 0
     }
     if (liveHP > 0) {
-      ctx.shadowColor = "#6699ff"; ctx.shadowBlur = dotR2 * 3
-      ctx.beginPath(); ctx.arc(rx, pty(liveHP), dotR2, 0, 6.283); ctx.fillStyle = "#6699ff"; ctx.fill()
+      ctx.shadowColor = "#22ccee"; ctx.shadowBlur = dotR2 * 3
+      ctx.beginPath(); ctx.arc(rx, pty(liveHP), dotR2, 0, 6.283); ctx.fillStyle = "#22ccee"; ctx.fill()
       ctx.shadowBlur = 0
     }
     const lfx = gp.l + ggw - 4, lfy = gp.t + ggh - 6
     ctx.font = "700 " + cl(g.fs, 10, 16).toFixed(0) + "px Consolas,monospace"
-    ctx.textAlign = "right"; ctx.fillStyle = "#ff6666"
+    ctx.textAlign = "right"; ctx.fillStyle = "#f87171"
     ctx.fillText(Math.round(liveNm) + " Nm", lfx, lfy - g.fs * 1.1)
-    ctx.fillStyle = "#6699ff"
+    ctx.fillStyle = "#22ccee"
     ctx.fillText(Math.round(liveHP) + " HP", lfx, lfy)
   }
 }
@@ -1068,7 +1022,7 @@ useStreams(["electrics", "engineInfo", "wheelThermalData"], s => {
       }
       if (wt === null && s.electrics) wt = s.electrics["brakeSurfaceTemperature_" + wn] || null
       if (wt !== null) {
-        const c = wt < 100 ? "#4488ff" : wt < 300 ? "#00cc55" : wt < 500 ? "#ffcc00" : "#ff2244"
+        const c = wt < 100 ? "#4488ff" : wt < 300 ? "#00cc55" : wt < 500 ? "#fbbf24" : "#ff3355"
         bts.push({ val: Math.round(wt) + "°", color: c })
       }
     }
