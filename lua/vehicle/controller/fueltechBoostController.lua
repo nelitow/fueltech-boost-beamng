@@ -15,7 +15,6 @@ local currentPreset = "CUSTOM"
 
 -- RPM/boost table: sorted pairs of {rpm, boostPSI}
 local boostTable = {}
-local stockBoostTable = {}  -- preserved from init (before autosave overwrites)
 
 -- Boost-by-gear: multiplier per gear (1.0 = full boost)
 local boostByGear = false
@@ -165,10 +164,6 @@ local function updateGFX(dt)
   -- baseline, not as a clamp — v8.1.1+ always honours the user's target).
   local turboMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
 
-  -- Capture stockBoostMax if it wasn't available during init (electrics
-  -- often aren't populated on the first frame)
-  if stockBoostMax <= 0 and turboMax > 0 then stockBoostMax = turboMax end
-
   local actualBoost = electrics.values.turboBoost or electrics.values.boost or 0
 
   -- Safety: cut boost if coolant or oil temp too high
@@ -261,8 +256,16 @@ local function updateGFX(dt)
   electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0
   electrics.values.fueltech_als_firing = alsFiring and 1 or 0
 
+  -- STOCK on a turbo means "leave the wastegate alone" — hand control back
+  -- to the factory spring/wastegate curve instead of chasing an absolute
+  -- PSI target (there's no factory-boost value the game exposes to us).
+  local nativeStock = (currentPreset == "STOCK" and fiType == "turbo")
+
   -- Closed-loop PI controller
-  if currentRPM > 1500 and targetPSI > 0 then
+  if nativeStock then
+    integralError = 0
+    boostOffset = alsWastagateOverride or 0
+  elseif currentRPM > 1500 and targetPSI > 0 then
     local err = targetPSI - actualBoost
     integralError = integralError + err * dt * KI
     integralError = math.max(-IMAX, math.min(integralError, IMAX))
@@ -273,7 +276,7 @@ local function updateGFX(dt)
   end
 
   -- ALS wastegate override: keep wastegate from dumping when ALS fires
-  if alsWastagateOverride then
+  if alsWastagateOverride and not nativeStock then
     boostOffset = math.max(boostOffset, alsWastagateOverride)
   end
 
@@ -323,7 +326,7 @@ local function init(jbeamData)
   elseif hasSCReal and engine.supercharger.setBypassPressure then
     fiType = "supercharger"
     hasFI = true
-    stockBoostMax = electrics.values.turboBoostMax or electrics.values.boostMax or 0
+    stockBoostMax = electrics.values.superchargerBoostMax or 0
     log("I", "fueltechBoost", "Using supercharger (setBypassPressure)")
   else
     log("W", "fueltechBoost", "No controllable forced induction found, boost controller disabled")
@@ -365,10 +368,6 @@ local function init(jbeamData)
   end
 
   currentPreset = "CUSTOM"
-
-  -- Preserve the initial (stock) boost table before autosave can overwrite it.
-  stockBoostTable = {}
-  for i = 1, #boostTable do stockBoostTable[i] = {boostTable[i][1], boostTable[i][2]} end
 
   -- Setup profile directory
   local vehDir = v.data and v.data.vDirectory
@@ -676,19 +675,18 @@ local function setPreset(name)
     for i, r in ipairs(rpmPoints) do boostTable[i] = {r, maxVal} end
     log("I", "fueltechBoost", string.format("MAX preset: %.1f PSI per RPM (hw rated max %.1f)", maxVal, hwMax))
   elseif name == "STOCK" then
-    -- Restore the original boost table captured at init (before any user
-    -- modifications or autosave restore). This is the authentic "stock"
-    -- curve including RPM shaping from jbeam. Falls back to flat at
-    -- stockBoostMax if no initial table was saved.
-    if #stockBoostTable > 0 then
-      boostTable = {}
-      for i = 1, #stockBoostTable do boostTable[i] = {stockBoostTable[i][1], stockBoostTable[i][2]} end
+    -- Display-only reference line. Actual STOCK behaviour for turbos is a
+    -- native wastegate passthrough (see updateGFX) since turboBoostMax is
+    -- the wastegate's hardware ceiling, not the factory boost level.
+    local sv
+    if fiType == "supercharger" then
+      sv = electrics.values.superchargerBoostMax or stockBoostMax or 0
     else
-      local sv = stockBoostMax > 0 and stockBoostMax or (electrics.values.turboBoostMax or electrics.values.boostMax or 0)
-      if sv <= 0 then sv = 14 end
-      boostTable = {}
-      for i, r in ipairs(rpmPoints) do boostTable[i] = {r, sv} end
+      sv = electrics.values.turboBoostMax or electrics.values.boostMax or stockBoostMax or 0
     end
+    if sv <= 0 then sv = 14 end
+    boostTable = {}
+    for i, r in ipairs(rpmPoints) do boostTable[i] = {r, sv} end
   elseif name == "AUTOMAX" then
     autoMax()
     return
@@ -697,7 +695,6 @@ local function setPreset(name)
   currentPreset = name
   log("I", "fueltechBoost", "Applied preset: " .. name)
   markBoostMapDirty()
-  guihooks.trigger("fueltechPresetInfo", { preset = currentPreset })
   getBoostTable()
   sendPowerCurves()
 end
@@ -718,20 +715,7 @@ local function autoMax()
   end
 
   if torqueLimit <= 0 then
-    -- No damage threshold — use 125% of stock peak torque as a safe ceiling.
-    -- Without maxTorqueRating, using raw peak torque would produce the same
-    -- result as STOCK (the boost that generates stock torque = stock boost).
-    if engine.getTorqueData then
-      local td = engine:getTorqueData()
-      if td and td.maxTorque and td.maxTorque > 0 then
-        torqueLimit = td.maxTorque * 1.25
-        log("I", "fueltechBoost", string.format("No maxTorqueRating — using 125%% of stock peak torque as limit: %.0f Nm", torqueLimit))
-      end
-    end
-  end
-
-  if torqueLimit <= 0 then
-    log("W", "fueltechBoost", "No torque data for Auto Max, using MAX preset instead")
+    log("W", "fueltechBoost", "No torque limit found for Auto Max, using MAX preset instead")
     setPreset("MAX")
     return
   end
@@ -777,13 +761,8 @@ local function autoMax()
   currentPreset = "AUTOMAX"
   log("I", "fueltechBoost", string.format("Applied Auto Max preset (torque limit: %d Nm, ref boost: %.1f PSI)", torqueLimit, refBoost2))
   markBoostMapDirty()
-  guihooks.trigger("fueltechPresetInfo", { preset = currentPreset })
   getBoostTable()
   sendPowerCurves()
-end
-
-local function sendPresetInfo()
-  guihooks.trigger("fueltechPresetInfo", { preset = currentPreset })
 end
 
 M.init = init
@@ -802,6 +781,5 @@ M.saveProfile = saveProfile
 M.loadProfile = loadProfile
 M.deleteProfile = deleteProfile
 M.getProfileList = getProfileList
-M.sendPresetInfo = sendPresetInfo
 
 return M

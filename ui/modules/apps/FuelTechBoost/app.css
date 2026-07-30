@@ -1,70 +1,114 @@
+/* Nelitomorphism-derived tokens, scoped to .ft so they never leak into the
+   rest of BeamNG's UI. Brand orange is kept as the primary accent (it's the
+   mod's identity); everything else — elevation scale, edges, radii,
+   shadows, motion — follows github.com/nelitow/Nelitomorphism-UI-Kit. */
+.ft {
+  --bg-0: #131519;
+  --bg-1: #191c22;
+  --bg-2: #20242c;
+  --bg-3: #292e38;
+  --edge-1: rgba(255,255,255,0.07);
+  --edge-2: rgba(255,255,255,0.13);
+  --fg-1: #eef0f5;
+  --fg-2: #b0b8c8;
+  --fg-3: #7880a0;
+
+  --ft-accent: #ff6600;
+  --ft-accent-dim: rgba(255,102,0,0.14);
+  --ft-ok: #00cc66;
+  --ft-ok-dim: rgba(0,204,102,0.14);
+  --ft-warn: #ffcc00;
+  --ft-warn-dim: rgba(255,204,0,0.14);
+  --ft-danger: #ff3355;
+  --ft-danger-dim: rgba(255,51,85,0.14);
+
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+  --r-pill: 999px;
+  --control-h: 30px;
+
+  --shadow-raise: 0 1px 0 rgba(255,255,255,0.06) inset, 0 8px 24px rgba(0,0,0,0.45);
+  --shadow-overlay: 0 1px 0 rgba(255,255,255,0.08) inset, 0 24px 64px rgba(0,0,0,0.6);
+
+  --dur-1: 120ms;
+  --dur-2: 260ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Root — transparent HUD overlay, resizable widget */
 .ft {
   background: transparent;
-  color: #d8dce8;
-  font-family: Consolas, 'Courier New', monospace;
+  color: var(--fg-1);
+  font-family: system-ui, -apple-system, sans-serif;
 }
+
+.ft, .ft * { box-sizing: border-box; }
 
 /* Header */
 .ft-hdr {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(10,12,20,0.82);
-  border: 1px solid rgba(40,46,66,0.5);
-  border-radius: 6px;
+  background: rgba(19,21,25,0.85);
+  border: 1px solid var(--edge-1);
+  border-radius: var(--r-1);
   padding: 0 14px;
+  box-shadow: var(--shadow-raise);
 }
 
 .ft-brand {
   font-size: 13px;
   font-weight: 800;
-  color: #ff6600;
+  color: var(--ft-accent);
   letter-spacing: 4px;
 }
 
 .ft-hdr-boost {
   font-size: 13px;
   font-weight: 600;
-  color: #c0c8e0;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
 }
 
-.ft-hdr-sep { color: #4a5068; }
-.ft-hdr-tgt { font-size: 11px; color: #7880a0; }
+.ft-hdr-sep { color: var(--fg-3); opacity: 0.6; }
+.ft-hdr-tgt { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
 
 .ft-peak {
   font-size: 10px;
-  color: #7880a0;
+  color: var(--fg-3);
   cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out);
 }
-.ft-peak:hover { color: #c0c8e0; }
+.ft-peak:hover { color: var(--fg-2); }
 
 .ft-toggle {
   font-size: 10px;
-  color: #667088;
+  color: var(--fg-3);
   cursor: pointer;
   letter-spacing: 1px;
-  border: 1px solid rgba(102, 112, 136, 0.4);
-  border-radius: 3px;
+  border: 1px solid var(--edge-2);
+  border-radius: var(--r-1);
   padding: 2px 6px;
   user-select: none;
+  transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
 }
-.ft-toggle:hover { color: #ff6600; border-color: rgba(255, 102, 0, 0.6); }
+.ft-toggle:hover { color: var(--ft-accent); border-color: rgba(255,102,0,0.6); }
 
 /* TUNE button — pill style, accent colour, so it's the obvious action.
    Toggles to a closed-state look when the overlay is open. */
 .ft-tune-btn {
   font-size: 11px;
   font-weight: 700;
-  color: #ff8800;
-  border: 1px solid rgba(255, 136, 0, 0.6);
-  background: rgba(255, 136, 0, 0.10);
+  color: var(--ft-accent);
+  border: 1px solid rgba(255,102,0,0.6);
+  background: var(--ft-accent-dim);
   padding: 3px 10px;
-  border-radius: 12px;
-  transition: background 0.15s ease, color 0.15s ease;
+  border-radius: var(--r-pill);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
-.ft-tune-btn:hover { background: rgba(255, 136, 0, 0.20); color: #ffaa44; }
-.ft-tune-btn-on   { color: #ddd; border-color: rgba(220, 220, 220, 0.55); background: rgba(40, 44, 56, 0.6); }
+.ft-tune-btn:hover { background: rgba(255,102,0,0.22); color: #ffaa55; }
+.ft-tune-btn-on   { color: var(--fg-1); border-color: var(--edge-2); background: var(--bg-3); }
 
 /* Fixed-width numeric cells in the telemetry strip. Without these, the row
    reflows every time a value crosses a digit-count boundary (0 → 100). */
@@ -77,16 +121,16 @@
   position: absolute;
   z-index: 30;
   left: 0; top: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0,0,0,0.55);
   cursor: pointer;
 }
 .ft-tune-panel {
   position: absolute;
   z-index: 31;
-  background: rgba(10, 12, 20, 0.96);
-  border: 1px solid rgba(255, 102, 0, 0.4);
-  border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  background: rgba(19,21,25,0.97);
+  border: 1px solid rgba(255,102,0,0.4);
+  border-radius: var(--r-2);
+  box-shadow: var(--shadow-overlay);
   padding: 6px;
   box-sizing: border-box;
   overflow: hidden;
@@ -99,7 +143,7 @@
   align-items: center;
   font-size: 10px;
   letter-spacing: 1px;
-  color: #ff8800;
+  color: var(--ft-accent);
   height: 16px;
   cursor: grab;        /* title bar is the drag handle */
   user-select: none;
@@ -108,11 +152,12 @@
 .ft-tune-close {
   font-size: 18px;
   line-height: 14px;
-  color: #99a;
+  color: var(--fg-3);
   cursor: pointer;
   padding: 0 6px;
+  transition: color var(--dur-1) var(--ease-out);
 }
-.ft-tune-close:hover { color: #ff4466; }
+.ft-tune-close:hover { color: var(--ft-danger); }
 
 .ft-dot {
   width: 7px;
@@ -120,12 +165,12 @@
   border-radius: 50%;
   display: inline-block;
 }
-.ft-dot.on  { background: #00cc55; box-shadow: 0 0 8px rgba(0,204,85,0.5); }
-.ft-dot.off { background: #662200; }
+.ft-dot.on  { background: var(--ft-ok); box-shadow: 0 0 8px rgba(0,204,102,0.5); }
+.ft-dot.off { background: #4a3020; }
 
 .ft-hdr-state {
   font-size: 10px;
-  color: #667088;
+  color: var(--fg-3);
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
@@ -134,7 +179,7 @@
 .ft-cell {
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--r-2);
   overflow: hidden;
 }
 
@@ -149,34 +194,35 @@
 .ft-spd {
   font-size: 56px;
   font-weight: 700;
-  color: #fff;
+  color: var(--fg-1);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .ft-spd-u {
   font-size: 12px;
-  color: #6a7498;
+  color: var(--fg-3);
   letter-spacing: 4px;
 }
 
 .ft-gear-l {
   font-size: 10px;
-  color: #6a7498;
+  color: var(--fg-3);
   letter-spacing: 2px;
 }
 
 .ft-gear-v {
   font-size: 38px;
   font-weight: 700;
-  color: #00ff88;
+  color: var(--ft-ok);
   line-height: 1;
-  text-shadow: 0 0 18px rgba(0,255,136,0.2);
-  transition: color 0.15s ease, text-shadow 0.15s ease;
+  text-shadow: 0 0 18px rgba(0,204,102,0.25);
+  transition: color var(--dur-1) var(--ease-out), text-shadow var(--dur-1) var(--ease-out);
 }
 
 .ft-gear-mode {
   font-size: 9px;
-  color: #6a7498;
+  color: var(--fg-3);
   letter-spacing: 2px;
   margin-top: 2px;
   text-transform: uppercase;
@@ -184,15 +230,15 @@
 
 /* Shift light — gear flash */
 .ft-shift-gear {
-  color: #ff2244 !important;
-  text-shadow: 0 0 24px rgba(255,34,68,0.6) !important;
+  color: var(--ft-danger) !important;
+  text-shadow: 0 0 24px rgba(255,51,85,0.6) !important;
 }
 
 /* Presets bar */
 .ft-bar {
   display: flex;
   gap: 4px;
-  border-radius: 6px;
+  border-radius: var(--r-1);
 }
 
 .ft-btn {
@@ -200,26 +246,27 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
+  height: var(--control-h);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 1px;
-  background: rgba(10,12,20,0.82);
-  border: 1px solid rgba(40,46,66,0.5);
-  border-radius: 3px;
-  color: #6a7498;
+  background: rgba(19,21,25,0.85);
+  border: 1px solid var(--edge-1);
+  border-radius: var(--r-1);
+  color: var(--fg-3);
   cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
 }
 
 .ft-btn:hover {
-  color: #b0b8d0;
-  border-color: #4a5878;
+  color: var(--fg-2);
+  border-color: var(--edge-2);
 }
 
 .ft-btn-on {
-  color: #ff6600;
-  border-color: #ff6600;
-  background: rgba(26,16,8,0.9);
+  color: var(--ft-accent);
+  border-color: var(--ft-accent);
+  background: rgba(41,26,15,0.9);
   box-shadow: 0 0 12px rgba(255,102,0,0.12);
 }
 
@@ -241,15 +288,15 @@
   align-items: center;
   gap: 20px;
   padding: 4px 14px;
-  background: rgba(255,34,68,0.15);
-  border: 1px solid rgba(255,34,68,0.4);
-  border-radius: 4px;
+  background: var(--ft-danger-dim);
+  border: 1px solid rgba(255,51,85,0.4);
+  border-radius: var(--r-1);
 }
 
 .ft-warn-item {
   font-size: 13px;
   font-weight: 700;
-  color: #ff4466;
+  color: var(--ft-danger);
   letter-spacing: 1.5px;
 }
 
@@ -257,11 +304,11 @@
 .ft-shift {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  border: 3px solid #ff2244;
-  border-radius: 8px;
+  border: 3px solid var(--ft-danger);
+  border-radius: var(--r-2);
   pointer-events: none;
   z-index: 15;
-  box-shadow: inset 0 0 30px rgba(255,34,68,0.08);
+  box-shadow: inset 0 0 30px rgba(255,51,85,0.08);
 }
 
 .ft-shift-on {
@@ -269,14 +316,14 @@
 }
 
 @keyframes ft-shift-flash {
-  0%   { border-color: #ff2244; box-shadow: inset 0 0 30px rgba(255,34,68,0.08); }
-  100% { border-color: #ff6600; box-shadow: inset 0 0 30px rgba(255,102,0,0.06); }
+  0%   { border-color: var(--ft-danger); box-shadow: inset 0 0 30px rgba(255,51,85,0.08); }
+  100% { border-color: var(--ft-accent); box-shadow: inset 0 0 30px rgba(255,102,0,0.06); }
 }
 
 /* Drag timer */
 .ft-drag-title {
   font-size: 10px;
-  color: #7880a0;
+  color: var(--fg-3);
   letter-spacing: 2px;
   text-align: center;
   margin-bottom: 2px;
@@ -291,31 +338,32 @@
 
 .ft-drag-label {
   font-size: 10px;
-  color: #8890a8;
+  color: var(--fg-2);
   font-weight: 700;
 }
 
 .ft-drag-time {
   font-size: 13px;
   font-weight: 700;
-  color: #c0c8e0;
+  color: var(--fg-2);
   font-variant-numeric: tabular-nums;
 }
 
 .ft-drag-done {
-  color: #00ff88 !important;
-  text-shadow: 0 0 6px rgba(0,255,136,0.3);
+  color: var(--ft-ok) !important;
+  text-shadow: 0 0 6px rgba(0,204,102,0.3);
 }
 
 .ft-drag-reset {
   font-size: 10px;
-  color: #6a7498;
+  color: var(--fg-3);
   letter-spacing: 1px;
   text-align: center;
   cursor: pointer;
   margin-top: 2px;
+  transition: color var(--dur-1) var(--ease-out);
 }
-.ft-drag-reset:hover { color: #ff6600; }
+.ft-drag-reset:hover { color: var(--ft-accent); }
 
 /* Telemetry strip */
 .ft-telem {
@@ -323,41 +371,43 @@
   align-items: center;
   gap: 12px;
   padding: 0 14px;
-  background: rgba(10,12,20,0.6);
-  border: 1px solid rgba(40,46,66,0.3);
-  border-radius: 4px;
+  background: rgba(19,21,25,0.6);
+  border: 1px solid var(--edge-1);
+  border-radius: var(--r-1);
 }
 
 .ft-telem-item {
   font-size: 11px;
-  color: #667088;
+  color: var(--fg-3);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
 
 .ft-telem-item b {
-  color: #b0b8d0;
+  color: var(--fg-2);
   font-weight: 700;
+  margin: 0 2px;
 }
 
 .ft-telem-cel {
   font-size: 11px;
   font-weight: 700;
-  color: #ff6600;
+  color: var(--ft-accent);
   letter-spacing: 1px;
 }
 
 .ft-telem-fuel {
   font-size: 11px;
   font-weight: 700;
-  color: #ff2244;
+  color: var(--ft-danger);
   letter-spacing: 1px;
 }
 
 /* Version tag */
 .ft-ver {
   font-size: 10px;
-  color: #4a5068;
+  color: var(--fg-3);
+  opacity: 0.6;
   letter-spacing: 1px;
   margin-left: 4px;
 }
@@ -368,9 +418,9 @@
   flex-wrap: wrap;
   gap: 6px 12px;
   padding: 3px 14px;
-  background: rgba(10,12,20,0.6);
-  border: 1px solid rgba(40,46,66,0.3);
-  border-radius: 4px;
+  background: rgba(19,21,25,0.6);
+  border: 1px solid var(--edge-1);
+  border-radius: var(--r-1);
 }
 
 .ft-dmg-item {
@@ -380,27 +430,22 @@
   white-space: nowrap;
 }
 
-/* Brake temp values inline */
-.ft-telem-item b {
-  margin: 0 2px;
-}
-
 /* ALS button */
 .ft-btn-als {
   font-weight: 800 !important;
   letter-spacing: 1px !important;
 }
 .ft-btn-als-on {
-  color: #ff6600 !important;
-  border-color: #ff6600 !important;
-  background: rgba(26,16,8,0.9) !important;
+  color: var(--ft-accent) !important;
+  border-color: var(--ft-accent) !important;
+  background: rgba(41,26,15,0.9) !important;
   box-shadow: 0 0 10px rgba(255,102,0,0.15);
 }
 .ft-btn-als-firing {
-  color: #ff2244 !important;
-  border-color: #ff2244 !important;
-  background: rgba(40,6,10,0.9) !important;
-  box-shadow: 0 0 14px rgba(255,34,68,0.3);
+  color: var(--ft-danger) !important;
+  border-color: var(--ft-danger) !important;
+  background: rgba(43,10,17,0.9) !important;
+  box-shadow: 0 0 14px rgba(255,51,85,0.3);
   animation: ft-pulse 0.15s ease-in-out infinite;
 }
 
@@ -410,21 +455,21 @@
   letter-spacing: 2px !important;
 }
 .ft-btn-tc-on {
-  color: #00cc55 !important;
-  border-color: #00cc55 !important;
-  background: rgba(0,40,20,0.9) !important;
-  box-shadow: 0 0 10px rgba(0,204,85,0.15);
+  color: var(--ft-ok) !important;
+  border-color: var(--ft-ok) !important;
+  background: rgba(0,43,22,0.9) !important;
+  box-shadow: 0 0 10px rgba(0,204,102,0.15);
 }
 .ft-btn-tc-off {
-  color: #ff4466 !important;
-  border-color: #ff4466 !important;
-  background: rgba(40,8,12,0.9) !important;
-  box-shadow: 0 0 10px rgba(255,68,102,0.12);
+  color: var(--ft-danger) !important;
+  border-color: var(--ft-danger) !important;
+  background: rgba(43,9,13,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,51,85,0.12);
 }
 .ft-btn-tc-active {
-  color: #ffcc00 !important;
-  border-color: #ffcc00 !important;
-  background: rgba(40,32,0,0.9) !important;
+  color: var(--ft-warn) !important;
+  border-color: var(--ft-warn) !important;
+  background: rgba(43,34,0,0.9) !important;
   box-shadow: 0 0 10px rgba(255,204,0,0.2);
   animation: ft-pulse 0.3s ease-in-out infinite;
 }
@@ -435,27 +480,27 @@
   letter-spacing: 2px !important;
 }
 .ft-btn-abs-on {
-  color: #00cc55 !important;
-  border-color: #00cc55 !important;
-  background: rgba(0,40,20,0.9) !important;
-  box-shadow: 0 0 10px rgba(0,204,85,0.15);
+  color: var(--ft-ok) !important;
+  border-color: var(--ft-ok) !important;
+  background: rgba(0,43,22,0.9) !important;
+  box-shadow: 0 0 10px rgba(0,204,102,0.15);
 }
 .ft-btn-abs-off {
-  color: #ff4466 !important;
-  border-color: #ff4466 !important;
-  background: rgba(40,8,12,0.9) !important;
-  box-shadow: 0 0 10px rgba(255,68,102,0.12);
+  color: var(--ft-danger) !important;
+  border-color: var(--ft-danger) !important;
+  background: rgba(43,9,13,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,51,85,0.12);
 }
 .ft-btn-abs-active {
-  color: #ffcc00 !important;
-  border-color: #ffcc00 !important;
-  background: rgba(40,32,0,0.9) !important;
+  color: var(--ft-warn) !important;
+  border-color: var(--ft-warn) !important;
+  background: rgba(43,34,0,0.9) !important;
   box-shadow: 0 0 10px rgba(255,204,0,0.2);
   animation: ft-pulse 0.3s ease-in-out infinite;
 }
 
 /* Utility */
-.ft-red { color: #ff2244 !important; }
+.ft-red { color: var(--ft-danger) !important; }
 
 @keyframes ft-pulse {
   0%, 100% { opacity: 1; }
