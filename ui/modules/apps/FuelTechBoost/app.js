@@ -13,23 +13,12 @@ angular.module('beamng.apps')
       scope.$on('$destroy', function () {
         StreamsManager.remove(streamsList)
         if (initTimer) clearTimeout(initTimer)
-        if (cvsMap) {
-          cvsMap.removeEventListener('mousedown', onDown)
-          cvsMap.removeEventListener('mousemove', onMove)
-          cvsMap.removeEventListener('mouseup', onUp)
-          cvsMap.removeEventListener('mouseleave', onUp)
-          cvsMap.removeEventListener('touchstart', onTouchDown)
-          cvsMap.removeEventListener('touchmove', onTouchMove)
-          cvsMap.removeEventListener('touchend', onUp)
-          cvsMap.removeEventListener('touchcancel', onUp)
-        }
       })
 
       /* ==================== STATE ==================== */
       var rpm = 0, boost = 0, tgt = 0, speed = 0
       var oilT = 0, h2oT = 0, throttle = 0, turboRpm = 0
-      var maxRPM = 8000, maxPSI = 40, peakBoost = 0, boostMax = 0
-      var peakRPM = 0
+      var maxRPM = 8000, peakBoost = 0, boostMax = 0
       var gForceX = 0, gForceY = 0
       var gear = 0
       var engineLoad = 0, fuelVol = 0, exhFlow = 0
@@ -43,10 +32,8 @@ angular.module('beamng.apps')
       scope.hasTurbo = false
       scope.active = false
       scope.rpmStr = '0'; scope.boostStr = '0.0'; scope.tgtStr = '0.0'; scope.peakStr = '0.0'
-      scope.peakRpmStr = '0'
       scope.speedStr = '0'; scope.gearStr = 'N'; scope.gearModeStr = ''
       scope.preset = 'CUSTOM'
-      scope.dmodes = []
       scope.hasTCS = false
       scope.tcsActive = false  // matches lua default (custom TCS off by default in v8.1.0+)
       scope.tcsCut = 0  // 0-1, how much throttle is being cut
@@ -57,6 +44,14 @@ angular.module('beamng.apps')
       // Anti-lag system
       scope.alsActive = false
       scope.alsFiring = false
+
+      // Progressive nitrous
+      scope.hasNitrous = false
+      scope.n2oArmed = false
+      scope.n2oActive = false
+      var n2oLevel = 0, n2oAddedHp = 0, n2oGearMul = 1
+      scope.n2oAddedStr = '0'; scope.n2oBottleStr = '100'; scope.n2oPctStr = '0'
+      scope.n2oSubStr = 'OFF'
       scope.loadStr = '0'; scope.fuelStr = '0'; scope.exhFlowStr = '0.0'
       scope.clutchStr = '0'; scope.altStr = '0'; scope.odoStr = '0.0'
       scope.weightStr = '0'
@@ -106,29 +101,12 @@ angular.module('beamng.apps')
       scope.$on('fueltechDriveModesInfo', function (_, data) {
         if (!data || !data.length) return
         scope.$evalAsync(function () {
-          scope.dmodes = []
           for (var i = 0; i < data.length; i++) {
-            scope.dmodes.push({
-              name: data[i].name,
-              label: data[i].label,
-              electricsKey: data[i].electricsKey,
-              active: true
-            })
             // Detect TCS/ABS availability for dedicated buttons
             if (data[i].name === 'tcs') scope.hasTCS = true
             if (data[i].name === 'absController') scope.hasABS = true
           }
         })
-      })
-
-      // Boost-by-gear data
-      scope.$on('fueltechBoostByGearInfo', function (_, d) {
-        if (d) {
-          scope.$evalAsync(function () {
-            scope.boostByGear = d.enabled
-            scope.gearMultipliers = d.multipliers || []
-          })
-        }
       })
 
       // Damage tracking — friendly labels for BeamNG damage keys
@@ -224,7 +202,6 @@ angular.module('beamng.apps')
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").setPreset("'+n+'")') } catch(e){}
       }
       scope.resetPeak = function () { peakBoost = 0; scope.peakStr = '0.0' }
-      scope.resetPeakRpm = function () { peakRPM = 0; scope.peakRpmStr = '0' }
       // Debounce flags — prevent electrics sync from overwriting optimistic toggle for a few frames
       var tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
       scope.toggleTC = function () {
@@ -236,6 +213,12 @@ angular.module('beamng.apps')
         scope.alsActive = !scope.alsActive
         alsToggleDebounce = 10
         try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").toggleAntiLag()') } catch(e) {}
+      }
+      var n2oToggleDebounce = 0
+      scope.toggleN2O = function () {
+        scope.n2oArmed = !scope.n2oArmed
+        n2oToggleDebounce = 10
+        try { bngApi.activeObjectLua('controller.getControllerSafe("fueltechNitrous").toggleArm()') } catch(e) {}
       }
       scope.toggleABS = function () {
         scope.absActive = !scope.absActive
@@ -249,9 +232,9 @@ angular.module('beamng.apps')
         scope.tuneOpen = !scope.tuneOpen
         lay = null
         if (appW && appH) doLayout(appW, appH)
-        // Repaint graphs immediately when opening so the user doesn't see a blank panel
+        // Repaint immediately when opening so the user doesn't see a blank panel
         if (scope.tuneOpen) {
-          try { drawBoostMap(); drawPower() } catch(e) {}
+          try { drawPower() } catch(e) {}
         }
       }
 
@@ -282,7 +265,7 @@ angular.module('beamng.apps')
         tuneOffsetY = tuneDrag.baseY + (pt.clientY - tuneDrag.startY)
         lay = null
         if (appW && appH) doLayout(appW, appH)
-        try { drawBoostMap(); drawPower() } catch(e) {}
+        try { drawPower() } catch(e) {}
       }
       function tuneDragEnd () {
         tuneDrag = null
@@ -391,13 +374,6 @@ angular.module('beamng.apps')
           dmgEl.style.cssText = 'position:absolute;box-sizing:border-box;z-index:19;left:'+G+'px;top:'+(rowY+cl(telH,14,24)+2)+'px;width:'+usableW+'px;max-height:'+(telH*2)+'px;overflow:hidden;display:flex;flex-wrap:wrap;gap:4px 10px;padding:2px 14px;background:rgba(10,12,20,0.6);border:1px solid rgba(255,255,255,0.07);border-radius:4px'
         }
 
-        // Hide stale cells from earlier versions
-        var stale = ['.ft-c-rpm', '.ft-c-bst', '.ft-c-trb', '.ft-c-spd']
-        for (var si = 0; si < stale.length; si++) {
-          var sel = stale[si]; var el = q(sel)
-          if (el) el.style.display = 'none'
-        }
-
         // Gauges row — fills remaining vertical space
         if (hasTurbo) {
           box(q('.ft-c-oil'),     1, 2, rowY, rowH)
@@ -415,14 +391,15 @@ angular.module('beamng.apps')
             'display:flex;flex-direction:column;justify-content:center;padding:4px;' + GRAPH_BG)
         }
 
-        // TUNE overlay (compact centered panel, on-demand)
+        // POWER GRAPH overlay (compact centered panel, on-demand). Single
+        // read-only graph now — boost-map editing moved to the pause-menu
+        // Mods tab, so this no longer needs to split width with a map.
         var tunePanel = q('.ft-tune-panel')
-        var mapEl = q('.ft-c-map')
         var pwrEl = q('.ft-c-pwr')
-        var tuneMapW = 0, tuneMapH = 0, tunePwrW = 0
+        var tunePwrW = 0, tunePwrH = 0
         if (scope.tuneOpen && tunePanel) {
-          var tuneW = cl(Math.round(W * 0.7), 400, 760)
-          var tuneH = cl(Math.round(H * 0.88), 180, 380)
+          var tuneW = cl(Math.round(W * 0.45), 320, 560)
+          var tuneH = cl(Math.round(H * 0.7), 160, 320)
           var baseX = (W - tuneW) / 2
           var baseY = (H - tuneH) / 2
           var minX = -tuneW + 60, maxX = W - 60
@@ -431,20 +408,13 @@ angular.module('beamng.apps')
           var tuneY = cl(baseY + tuneOffsetY, minY, maxY)
           tunePanel.style.cssText = 'position:absolute;z-index:31;box-sizing:border-box;left:'+tuneX+'px;top:'+tuneY+'px;width:'+tuneW+'px;height:'+tuneH+'px;background:rgba(17,16,26,0.96);border:1px solid rgba(34,204,238,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden'
 
-          // Inside the panel: title strip on top, then map (left) + pwr (right)
           var titleH = 22
           var pad = 6
-          var inW = tuneW - pad * 2
-          var inH = tuneH - titleH - pad
-          var halfW = Math.floor(inW / 2) - 3
-          tuneMapW = halfW; tuneMapH = inH
-          tunePwrW = halfW
-          var innerY = titleH
-          if (mapEl) mapEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+pad+'px;top:'+innerY+'px;width:'+halfW+'px;height:'+inH+'px;overflow:hidden;' + GRAPH_BG
-          if (pwrEl) pwrEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+(pad+halfW+6)+'px;top:'+innerY+'px;width:'+halfW+'px;height:'+inH+'px;overflow:hidden;' + GRAPH_BG
+          tunePwrW = tuneW - pad * 2
+          tunePwrH = tuneH - titleH - pad
+          if (pwrEl) pwrEl.style.cssText = 'position:absolute;box-sizing:border-box;left:'+pad+'px;top:'+titleH+'px;width:'+tunePwrW+'px;height:'+tunePwrH+'px;overflow:hidden;' + GRAPH_BG
         } else {
           if (tunePanel) tunePanel.style.cssText = 'display:none'
-          if (mapEl) mapEl.style.display = 'none'
           if (pwrEl) pwrEl.style.display = 'none'
         }
 
@@ -465,14 +435,12 @@ angular.module('beamng.apps')
           h2oW: hasTurbo ? col2W : col3W, h2oH: rowH,
           miniW: hasTurbo ? cw2(3) : 0, miniH: rowH,
           gfW:  hasTurbo ? col2W : col3W, gfH: rowH,
-          graphW: tuneMapW, graphH: tuneMapH,
-          pwrW: tunePwrW
+          pwrW: tunePwrW, pwrH: tunePwrH
         }
         return lay
       }
 
       /* ==================== CANVAS ==================== */
-      var cvsMap = null, ctxMap = null
       var cvsPwr = null, ctxPwr = null
       var cvsOil = null, ctxOil = null
       var cvsH2o = null, ctxH2o = null
@@ -485,15 +453,6 @@ angular.module('beamng.apps')
         if (!cvsH2o) { try { cvsH2o = q('.ft-cv-h2o'); if (cvsH2o) ctxH2o = cvsH2o.getContext('2d') } catch(e){} }
         if (!cvsGf) { try { cvsGf = q('.ft-cv-gforce'); if (cvsGf) ctxGf = cvsGf.getContext('2d') } catch(e){} }
         if (!cvsMini) { try { cvsMini = q('.ft-cv-minimap'); if (cvsMini) ctxMini = cvsMini.getContext('2d') } catch(e){} }
-        if (!cvsMap) {
-          try { cvsMap = q('.ft-cv-map'); if (cvsMap) { ctxMap = cvsMap.getContext('2d')
-            cvsMap.addEventListener('mousedown', onDown); cvsMap.addEventListener('mousemove', onMove)
-            cvsMap.addEventListener('mouseup', onUp); cvsMap.addEventListener('mouseleave', onUp)
-            cvsMap.addEventListener('touchstart', onTouchDown, {passive:false})
-            cvsMap.addEventListener('touchmove', onTouchMove, {passive:false})
-            cvsMap.addEventListener('touchend', onUp); cvsMap.addEventListener('touchcancel', onUp)
-          }} catch(e){}
-        }
         if (!cvsPwr) { try { cvsPwr = q('.ft-cv-pwr'); if (cvsPwr) ctxPwr = cvsPwr.getContext('2d') } catch(e){} }
       }
 
@@ -684,75 +643,6 @@ angular.module('beamng.apps')
         ctx.fillText('BOOST MAP', pad + 2, pad + 1)
       }
 
-      /* ==================== BOOST MAP ==================== */
-      var BP={},BGW=0,BGH=0,BMW2=0,BMH2=0
-      function drawBoostMap () {
-        initCanvases(); if(!ctxMap||!lay) return
-        var sz=sizeCvs(cvsMap,lay.graphW,lay.graphH); if(!sz) return
-        BMW2=sz.w;BMH2=sz.h; var ctx=ctxMap
-        var g=drawGrid(ctx,BMW2,BMH2,maxRPM,maxPSI); if(!g) return
-        BP=g.p;BGW=g.gw;BGH=g.gh
-        function tx(r){return BP.l+cl(r/maxRPM,0,1)*BGW}
-        function ty(v){return BP.t+BGH-cl(v/maxPSI,0,1)*BGH}
-
-        // ── Turbo rated max — purely informational ──
-        // v8.1.1+: the controller honours whatever the user sets, so the
-        // line is just a "here's what the turbo's rated for" reference.
-        // Above-line targets are still legal; they just stress the turbo.
-        if (boostMax > 0 && boostMax < maxPSI) {
-          var limY = ty(boostMax)
-          ctx.fillStyle = 'rgba(167,139,250,0.06)'
-          ctx.fillRect(BP.l, BP.t, BGW, limY - BP.t)
-          ctx.save()
-          ctx.setLineDash([6, 4])
-          ctx.strokeStyle = 'rgba(167,139,250,0.55)'
-          ctx.lineWidth = 1
-          ctx.beginPath(); ctx.moveTo(BP.l, limY); ctx.lineTo(BP.l + BGW, limY); ctx.stroke()
-          ctx.restore()
-          ctx.font = cl(g.fs, 9, 12).toFixed(0) + 'px Consolas,monospace'
-          ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'
-          ctx.fillStyle = '#a78bfa'
-          ctx.fillText('TURBO RATED MAX ' + boostMax.toFixed(1) + ' PSI', BP.l + BGW - 4, limY - 2)
-        }
-
-        var steps=Math.max(Math.round(BGW/2),20),step=maxRPM/steps
-        ctx.beginPath();ctx.moveTo(tx(0),ty(0))
-        for(var i=0;i<=steps;i++)ctx.lineTo(tx(step*i),ty(lerpMap(step*i)))
-        ctx.lineTo(tx(maxRPM),ty(0));ctx.closePath()
-        var grd=ctx.createLinearGradient(0,BP.t,0,BP.t+BGH)
-        grd.addColorStop(0,'rgba(34,204,238,0.1)');grd.addColorStop(1,'rgba(34,204,238,0)')
-        ctx.fillStyle=grd;ctx.fill()
-
-        ctx.beginPath();ctx.moveTo(tx(0),ty(lerpMap(0)))
-        for(var i=1;i<=steps;i++)ctx.lineTo(tx(step*i),ty(lerpMap(step*i)))
-        var lw=cl(BMW2*0.004,1,2.5)
-        ctx.strokeStyle='#22ccee';ctx.lineWidth=lw;ctx.lineJoin='round';ctx.stroke()
-
-        var dr=cl(BMW2*0.008,3,7)
-        for(var i=0;i<map.length;i++){
-          var bx=tx(map[i][0]),by=ty(map[i][1]),hot=(i===hoverIdx||i===dragIdx)
-          if(hot){ctx.beginPath();ctx.arc(bx,by,dr+6,0,6.283);ctx.fillStyle='rgba(34,204,238,0.08)';ctx.fill()}
-          ctx.beginPath();ctx.arc(bx,by,dr+1,0,6.283);ctx.strokeStyle=hot?'#67e0f9':'rgba(34,204,238,0.3)';ctx.lineWidth=1;ctx.stroke()
-          ctx.beginPath();ctx.arc(bx,by,dr,0,6.283);ctx.fillStyle = hot ? '#67e0f9' : '#22ccee'; ctx.fill()
-          ctx.beginPath();ctx.arc(bx,by,dr*0.3,0,6.283);ctx.fillStyle='rgba(15,14,23,0.9)';ctx.fill()
-          if(hot){
-            ctx.font='bold '+cl(g.fs+1,10,14).toFixed(0)+'px Consolas,monospace'
-            ctx.fillStyle='#dde0ec'; ctx.textAlign='center'; ctx.textBaseline='alphabetic'
-            ctx.fillText(map[i][0]+' / '+map[i][1].toFixed(1)+' PSI', bx, by-dr-6)
-          }
-        }
-
-        if(!scope.active||rpm<50)return
-        var cx2=cl(tx(rpm),BP.l,BMW2-BP.r),cy2=cl(ty(boost),BP.t,BP.t+BGH),tgy=cl(ty(tgt),BP.t,BP.t+BGH)
-        var vg=ctx.createLinearGradient(0,BP.t,0,BP.t+BGH)
-        vg.addColorStop(0,'rgba(167,139,250,0)');vg.addColorStop(0.5,'rgba(167,139,250,0.05)');vg.addColorStop(1,'rgba(167,139,250,0)')
-        ctx.fillStyle=vg;ctx.fillRect(cx2-0.5,BP.t,1,BGH)
-        ctx.beginPath();ctx.arc(cx2,tgy,dr*1.5,0,6.283);ctx.strokeStyle='rgba(34,204,238,0.4)';ctx.lineWidth=cl(lw*0.5,0.5,1);ctx.stroke()
-        var dotC='#a78bfa'
-        ctx.shadowColor=dotC;ctx.shadowBlur=cl(BMW2*0.01,3,10)
-        ctx.beginPath();ctx.arc(cx2,cy2,dr*1.2,0,6.283);ctx.fillStyle=dotC;ctx.fill();ctx.shadowBlur=0
-      }
-
       /* ==================== POWER / TORQUE ==================== */
       // Renders the lua-computed curves only (fueltechPowerCurves). The lua
       // side replicates BeamNG's exact turbo model (spool-aware, efficiency-
@@ -760,7 +650,7 @@ angular.module('beamng.apps')
       function drawPower () {
         initCanvases(); if(!ctxPwr||!lay) return
         if (!pwrData) return
-        var sz=sizeCvs(cvsPwr,lay.pwrW,lay.graphH); if(!sz) return
+        var sz=sizeCvs(cvsPwr,lay.pwrW,lay.pwrH); if(!sz) return
         var w=sz.w,h=sz.h,ctx=ctxPwr
 
         var eR = (pwrData && pwrData.maxRPM) || 7000
@@ -888,28 +778,6 @@ angular.module('beamng.apps')
         }
       }
 
-      /* ==================== DRAG (mouse + touch) ==================== */
-      var dragIdx=-1,hoverIdx=-1,GRAB_R=18
-      function boostTx(r){return BP.l+cl(r/maxRPM,0,1)*BGW}
-      function boostTy(v){return BP.t+BGH-cl(v/maxPSI,0,1)*BGH}
-      function fromX(px){return cl((px-BP.l)/BGW,0,1)*maxRPM}
-      function fromY(py){return cl((BP.t+BGH-py)/BGH,0,1)*maxPSI}
-      function nearestPt(mx,my){var b=-1,bd=GRAB_R*GRAB_R;for(var i=0;i<map.length;i++){var dx=boostTx(map[i][0])-mx,dy=boostTy(map[i][1])-my;if(dx*dx+dy*dy<bd){bd=dx*dx+dy*dy;b=i}};return b}
-
-      function onDown(e){var r=cvsMap.getBoundingClientRect();dragIdx=nearestPt(e.clientX-r.left,e.clientY-r.top)}
-      function onMove(e){var r=cvsMap.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top
-        if(dragIdx>=0){map[dragIdx][0]=cl(Math.round(fromX(mx)/100)*100,1000,9000);map[dragIdx][1]=cl(Math.round(fromY(my)*2)/2,0,maxPSI);drawBoostMap();cvsMap.style.cursor='grabbing'}
-        else{var h2=nearestPt(mx,my);if(h2!==hoverIdx){hoverIdx=h2;cvsMap.style.cursor=h2>=0?'grab':'default';drawBoostMap()}}}
-
-      function onTouchDown(e){e.preventDefault();var t=e.touches[0];var r=cvsMap.getBoundingClientRect();dragIdx=nearestPt(t.clientX-r.left,t.clientY-r.top)}
-      function onTouchMove(e){e.preventDefault();if(dragIdx<0)return;var t=e.touches[0];var r=cvsMap.getBoundingClientRect(),mx=t.clientX-r.left,my=t.clientY-r.top
-        map[dragIdx][0]=cl(Math.round(fromX(mx)/100)*100,1000,9000);map[dragIdx][1]=cl(Math.round(fromY(my)*2)/2,0,maxPSI);drawBoostMap()}
-
-      function onUp(){if(dragIdx>=0){scope.$evalAsync(function(){scope.preset='CUSTOM'});map.sort(function(a,b){return a[0]-b[0]})
-        for(var i=0;i<map.length;i++){try{bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").setPoint('+(i+1)+','+map[i][0]+','+map[i][1]+')')}catch(e){}}
-        dragIdx=-1;setTimeout(function(){try{bngApi.activeObjectLua('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()')}catch(e){}},100);drawBoostMap()}
-        cvsMap.style.cursor=hoverIdx>=0?'grab':'default'}
-
       /* ==================== RESIZE + INIT ==================== */
       scope.$on('app:resized', function (_, data) {
         if (data && data.width > 0 && data.height > 0) {
@@ -945,8 +813,9 @@ angular.module('beamng.apps')
         // BeamNG's stock UI Apps now. Only draw the FuelTech-unique stuff.
         drawOilH2oGauges(); drawGForce()
         if (hasTurbo) { drawMiniBoostMap() }
-        // Boost map + power curve only render when the TUNE overlay is open
-        if (hasTurbo && scope.tuneOpen) { drawBoostMap(); drawPower() }
+        // Power/torque graph only renders when the panel is open — boost
+        // map editing lives exclusively in the pause-menu Mods tab now.
+        if (hasTurbo && scope.tuneOpen) { drawPower() }
       }
 
       /* ==================== WARNINGS ==================== */
@@ -958,6 +827,7 @@ angular.module('beamng.apps')
         if (oilT > 130) w.push('OIL TEMP ' + Math.round(oilT) + '°C')
         if (h2oT > 110) w.push('COOLANT ' + Math.round(h2oT) + '°C')
         if (scope.alsFiring) w.push('ALS ACTIVE')
+        if (scope.n2oActive) w.push('N2O ' + scope.n2oPctStr + '%')
         if (scope.tcsCut > 0.05) w.push('TC -' + Math.round(scope.tcsCut * 100) + '%')
         if (scope.absInterfering) w.push('ABS')
         scope.warnings = w
@@ -1081,6 +951,22 @@ angular.module('beamng.apps')
             if (absToggleDebounce > 0) { absToggleDebounce-- }
             else { scope.absActive = !!(s.electrics.abs) }
             scope.absInterfering = !!(s.electrics.absActive)
+
+            // Nitrous — presence is detected by the electrics key existing
+            // at all: the lua controller never publishes it on vehicles
+            // where init() bailed out (no engine, or a real N2O part already
+            // installed), so `undefined` means "not available here".
+            // fueltech_n2o_available is set exactly once per controller
+            // attach (init()), regardless of enabled state — unlike
+            // fueltech_n2o_armed, which reset()/toggleArm() can leave
+            // defined even on a disabled controller. Don't key off that.
+            scope.hasNitrous = s.electrics.fueltech_n2o_available === 1
+            if (n2oToggleDebounce > 0) { n2oToggleDebounce-- }
+            else { scope.n2oArmed = !!(s.electrics.fueltech_n2o_armed) }
+            scope.n2oActive = !!(s.electrics.fueltech_n2o_active)
+            n2oLevel = s.electrics.fueltech_n2o_level || 0
+            n2oAddedHp = s.electrics.fueltech_n2o_addedHp || 0
+            n2oGearMul = (s.electrics.fueltech_n2o_gearMul != null) ? s.electrics.fueltech_n2o_gearMul : 1
           }
 
           // Feature detection — detect forced induction (turbo or supercharger)
@@ -1102,7 +988,6 @@ angular.module('beamng.apps')
 
           // Peak trackers
           if(boost>peakBoost)peakBoost=boost
-          if(rpm>peakRPM)peakRPM=rpm
 
           // Shift light at 90% of max RPM
           scope.shiftLight = (rpm > maxRPM * shiftRpmPct && rpm > 1000)
@@ -1115,8 +1000,7 @@ angular.module('beamng.apps')
 
           // Update display strings
           scope.rpmStr=Math.round(rpm).toString(); scope.boostStr=boost.toFixed(1)
-          scope.tgtStr=tgt.toFixed(1); scope.peakStr=peakBoost.toFixed(1); scope.boostMaxStr=boostMax>0?boostMax.toFixed(1):''
-          scope.peakRpmStr=Math.round(peakRPM).toString()
+          scope.tgtStr=tgt.toFixed(1); scope.peakStr=peakBoost.toFixed(1)
           scope.speedStr=Math.round(speed).toString()
           scope.loadStr=Math.round(engineLoad*100).toString()
           scope.fuelStr=Math.round(fuelVol).toString()
@@ -1126,6 +1010,15 @@ angular.module('beamng.apps')
           scope.odoStr=(odometer/1000).toFixed(1)
           scope.weightStr=Math.round(vehMass).toString()
           scope.cel=cel; scope.lowFuel=lowFuel
+          scope.n2oAddedStr=Math.round(n2oAddedHp).toString()
+          scope.n2oPctStr=Math.round(n2oLevel*100).toString()
+          // Distinguish "armed but this gear is locked out" from "armed and
+          // waiting for WOT/RPM" — both looked like a bare "ARMED" before,
+          // which hid exactly the state (gear tune) that's easy to lose track of.
+          if (!scope.n2oArmed) scope.n2oSubStr = 'OFF'
+          else if (scope.n2oActive) scope.n2oSubStr = scope.n2oPctStr + '%'
+          else if (n2oGearMul <= 0) scope.n2oSubStr = 'GEAR LOCKED'
+          else scope.n2oSubStr = 'READY'
 
           // Brake temperatures from wheelThermalData or electrics
           var bts = []

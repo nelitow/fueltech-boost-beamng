@@ -42,7 +42,8 @@ local INJECT_CMD = [[
         log('W', 'fueltech.ge', 'failed to attach fueltechDrivetrain: ' .. tostring(err2))
       end
     end
-    -- Auto lights: every vehicle has headlights, safe to attach to all.
+    -- Auto lights: forces low beams + fog lights on at spawn/reset. Every
+    -- vehicle has headlights, safe to attach to all.
     if not controller.getController('fueltechAutoLights') then
       local ok3, err3 = pcall(function()
         controller.loadControllerExternal('fueltechAutoLights', 'fueltechAutoLights', {})
@@ -51,49 +52,19 @@ local INJECT_CMD = [[
         log('W', 'fueltech.ge', 'failed to attach fueltechAutoLights: ' .. tostring(err3))
       end
     end
-  end
-]]
-
--- ── Auto headlights: day/night detection ──
--- Vehicle-side lua has no access to the environment/time-of-day — only the
--- GE side does — so this extension polls it and pushes a night/day flag
--- down to every vehicle's fueltechAutoLights controller.
-local NIGHT_CHECK_INTERVAL = 1.0   -- seconds between checks
-local DUSK_START = 0.77            -- time-of-day fraction (0-1) — night begins
-local DAWN_END = 0.23               -- time-of-day fraction — night ends
-local nightCheckTimer = 0
-
-local function isTimeOfDayNight(t)
-  if not t then return false end
-  return t >= DUSK_START or t <= DAWN_END
-end
-
-local function pushNightState(vehicleId, isNight)
-  if not vehicleId then return end
-  local veh = scenetree.findObjectById(vehicleId)
-  if not veh then return end
-  veh:queueLuaCommand(
-    "local c = controller.getControllerSafe('fueltechAutoLights') if c and c.setNight then c.setNight(" ..
-    tostring(isNight) .. ") end"
-  )
-end
-
-local function onUpdate(dtReal, dtSim, dtRaw)
-  nightCheckTimer = nightCheckTimer + (dtReal or dtSim or 0)
-  if nightCheckTimer < NIGHT_CHECK_INTERVAL then return end
-  nightCheckTimer = 0
-
-  if not core_environment or not core_environment.getTimeOfDay then return end
-  local tod = core_environment.getTimeOfDay()
-  local isNight = isTimeOfDayNight(tod and tod.time)
-
-  if getAllVehicles then
-    local vehs = getAllVehicles() or {}
-    for _, veh in ipairs(vehs) do
-      if veh and veh.getId then pushNightState(veh:getId(), isNight) end
+    -- Progressive nitrous: fully custom torque adder, works on any engine
+    -- (NA or FI). Its own init() bails out on vehicles that already ship a
+    -- real N2O part, so it's safe to attach everywhere.
+    if not controller.getController('fueltechNitrous') then
+      local ok4, err4 = pcall(function()
+        controller.loadControllerExternal('fueltechNitrous', 'fueltechNitrous', {})
+      end)
+      if not ok4 then
+        log('W', 'fueltech.ge', 'failed to attach fueltechNitrous: ' .. tostring(err4))
+      end
     end
   end
-end
+]]
 
 local function attachToVehicle(vehicleId)
   if not vehicleId then return end
@@ -137,6 +108,5 @@ M.onVehicleSpawned  = onVehicleSpawned
 M.onVehicleResetted = onVehicleResetted
 M.onVehicleSwitched = onVehicleSwitched
 M.onExtensionLoaded = onExtensionLoaded
-M.onUpdate           = onUpdate
 
 return M

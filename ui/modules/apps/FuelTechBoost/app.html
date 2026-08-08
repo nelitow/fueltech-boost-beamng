@@ -12,8 +12,8 @@
     <span class="ft-dot" ng-if="hasTurbo" ng-class="active?'on':'off'"></span>
     <span class="ft-hdr-state" ng-if="hasTurbo">{{active?'ACTIVE':'STANDBY'}}</span>
     <span class="ft-toggle ft-tune-btn" ng-if="hasTurbo" ng-click="toggleTune()"
-          ng-class="{'ft-tune-btn-on': tuneOpen}">{{tuneOpen?'✕ CLOSE':'⚙ TUNE BOOST MAP'}}</span>
-    <span class="ft-ver">8.6.0</span>
+          ng-class="{'ft-tune-btn-on': tuneOpen}">{{tuneOpen?'✕ CLOSE':'📈 POWER GRAPH'}}</span>
+    <span class="ft-ver">8.7.0</span>
   </div>
 
   <!-- Warning bar (overlay, z-index above content) -->
@@ -30,6 +30,7 @@
     <span class="ft-telem-item">CLT <b class="ft-num3">{{clutchStr}}</b>%</span>
     <span class="ft-telem-item">ALT <b class="ft-num4">{{altStr}}</b>m</span>
     <span class="ft-telem-item">ODO <b class="ft-num4">{{odoStr}}</b>km</span>
+    <span class="ft-telem-item" ng-if="hasNitrous && n2oArmed">N2O <b class="ft-num3">{{n2oAddedStr}}</b>hp</span>
     <span class="ft-telem-item" ng-if="brakeTemps.length">BRK
       <b ng-repeat="bt in brakeTemps" ng-style="{'color': bt.color}" class="ft-num3">{{bt.val}}</b></span>
     <span class="ft-telem-cel ft-blink" ng-if="cel">CEL</span>
@@ -67,15 +68,15 @@
     <div class="ft-drag-reset" ng-click="resetDrag()">RESET</div>
   </div>
 
-  <!-- Tune overlay: on-demand, compact centered panel with boost map + power curve.
-       Hidden by default to keep the dashboard's middle clear. -->
+  <!-- Power graph overlay: on-demand, read-only projected power/torque.
+       Hidden by default to keep the dashboard's middle clear. Boost-map
+       editing lives exclusively in the pause-menu Mods tab now. -->
   <div class="ft-tune-backdrop" ng-if="tuneOpen" ng-click="toggleTune()"></div>
   <div class="ft-tune-panel" ng-show="tuneOpen">
     <div class="ft-tune-title" ng-mousedown="tuneDragStart($event)" ng-touchstart="tuneDragStart($event)">
-      <span>⠿ TUNE — drag dots to set boost-by-RPM. Drag this bar to move the panel.</span>
+      <span>⠿ POWER GRAPH — live projected power &amp; torque. Tune the boost map from the pause-menu Mods tab. Drag this bar to move the panel.</span>
       <span class="ft-tune-close" ng-click="toggleTune()">×</span>
     </div>
-    <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
     <div class="ft-cell ft-c-pwr"><canvas class="ft-cv ft-cv-pwr"></canvas></div>
   </div>
 
@@ -96,6 +97,12 @@
           ng-class="{'ft-btn-tc-on': tcsActive && tcsCut < 0.05, 'ft-btn-tc-off': !tcsActive, 'ft-btn-tc-active': tcsActive && tcsCut >= 0.05}">TC</span>
     <span class="ft-btn ft-btn-abs" ng-if="hasABS" ng-click="toggleABS()"
           ng-class="{'ft-btn-abs-on': absActive && !absInterfering, 'ft-btn-abs-off': !absActive, 'ft-btn-abs-active': absActive && absInterfering}">ABS</span>
+    <span class="ft-btn ft-btn-n2o" ng-if="hasNitrous" ng-click="toggleN2O()"
+          ng-class="{'ft-btn-n2o-on': n2oArmed, 'ft-btn-n2o-firing': n2oActive, 'ft-btn-n2o-locked': n2oArmed && !n2oActive && n2oSubStr === 'GEAR LOCKED'}"
+          title="NITROUS — arm it, then hold full throttle above the activation RPM in an allowed gear. Shot ramps in progressively, tune the curve and gear lockouts from the pause-menu tuner.">
+      <span class="ft-btn-main">NITROUS</span>
+      <span class="ft-btn-sub">{{n2oSubStr}}</span>
+    </span>
   </div>
 
 </div>

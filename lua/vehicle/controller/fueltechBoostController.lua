@@ -16,10 +16,6 @@ local currentPreset = "CUSTOM"
 -- RPM/boost table: sorted pairs of {rpm, boostPSI}
 local boostTable = {}
 
--- Boost-by-gear: multiplier per gear (1.0 = full boost)
-local boostByGear = false
-local gearMultipliers = {0.5, 0.65, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0}
-
 -- Anti-lag system (ALS)
 local alsEnabled = false       -- user toggle
 local alsFiring = false        -- currently firing (off-throttle, keeping turbo spooled)
@@ -215,6 +211,20 @@ local function getBaseTorque(rpmVal)
   return lerp(engine.torqueCurve[below], engine.torqueCurve[above], t)
 end
 
+-- Friction loss BeamNG's own torque-curve app subtracts before display
+-- (lua/vehicle/powertrain/combustionEngine.lua, getTorqueData): static
+-- friction plus an RPM-scaled dynamic term, both scaled by wear/damage.
+-- getBaseTorque() above reads the raw jbeam curve, so without this our
+-- numbers ran hot vs the native app — worse at high RPM where the dynamic
+-- term grows. Matching this exactly is what makes STOCK line up 1:1.
+local function frictionLoss(rpmVal)
+  if not engine then return 0 end
+  local staticF = (engine.friction or 0) * (engine.wearFrictionCoef or 1) * (engine.damageFrictionCoef or 1)
+  local dynF = (engine.dynamicFriction or 0) * (engine.wearDynamicFrictionCoef or 1) *
+    (engine.damageDynamicFrictionCoef or 1) * rpmVal * 0.10471975
+  return staticF + dynF
+end
+
 -- Linear interpolation of boost target from RPM table
 local function getTargetBoost(rpm)
   if #boostTable == 0 then return baseWastegate end
@@ -231,13 +241,6 @@ local function getTargetBoost(rpm)
     end
   end
   return baseWastegate
-end
-
-local function getGearMultiplier()
-  if not boostByGear then return 1.0 end
-  local gearVal = electrics.values.gear_M or electrics.values.gearIndex or 0
-  if gearVal <= 0 then return 1.0 end
-  return gearMultipliers[gearVal] or 1.0
 end
 
 -- Closed-loop boost controller state
@@ -263,10 +266,6 @@ local function updateGFX(dt)
 
   local currentRPM = engine.outputRPM or 0
   local targetPSI = getTargetBoost(currentRPM)
-
-  -- Apply gear multiplier
-  local gearMul = getGearMultiplier()
-  targetPSI = targetPSI * gearMul
 
   -- Read the hardware max boost (used by the UI as an informational
   -- baseline, not as a clamp — v8.1.1+ always honours the user's target).
@@ -307,7 +306,7 @@ local function updateGFX(dt)
       -- Inline write (avoids touching the saveProfile() side effects like
       -- the "Loaded profile" log line and the UI profile-list refresh).
       if profileDir then
-        local data = { name = AUTOSAVE_NAME, boostTable = {}, gearMultipliers = gearMultipliers, boostByGear = boostByGear, currentPreset = currentPreset }
+        local data = { name = AUTOSAVE_NAME, boostTable = {}, currentPreset = currentPreset }
         for i = 1, #boostTable do data.boostTable[i] = {boostTable[i][1], boostTable[i][2]} end
         savedProfiles[AUTOSAVE_NAME] = data
         pcall(function()
@@ -389,7 +388,6 @@ local function updateGFX(dt)
   electrics.values.fueltech_currentBoost = actualBoost
   electrics.values.fueltech_active = 1
   electrics.values.fueltech_currentRPM = currentRPM
-  electrics.values.fueltech_gearMul = gearMul
 end
 
 local function init(jbeamData)
@@ -480,10 +478,6 @@ local function init(jbeamData)
   if auto and auto.boostTable and #auto.boostTable > 0 then
     boostTable = {}
     for i, pt in ipairs(auto.boostTable) do boostTable[i] = {pt[1], pt[2]} end
-    if auto.gearMultipliers then
-      for i, val in ipairs(auto.gearMultipliers) do gearMultipliers[i] = val end
-    end
-    if auto.boostByGear ~= nil then boostByGear = auto.boostByGear end
     if auto.currentPreset then currentPreset = auto.currentPreset end
     log("I", "fueltechBoost", "Restored boost map from autosave (" .. #boostTable .. " points, preset: " .. tostring(currentPreset) .. ")")
   end
@@ -499,7 +493,6 @@ local function reset()
   electrics.values.fueltech_targetBoost = 0
   electrics.values.fueltech_currentBoost = 0
   electrics.values.fueltech_currentRPM = 0
-  electrics.values.fueltech_gearMul = 1
   electrics.values.fueltech_als_firing = 0
   boostOffset = 0
   integralError = 0
@@ -531,16 +524,6 @@ local function getBoostTable()
   guihooks.trigger("fueltechBoostTable", result)
 end
 
--- Boost-by-gear functions
-local function toggleBoostByGear()
-  boostByGear = not boostByGear
-  markBoostMapDirty()
-  guihooks.trigger("fueltechBoostByGearInfo", {
-    enabled = boostByGear,
-    multipliers = gearMultipliers
-  })
-end
-
 local function toggleAntiLag()
   alsEnabled = not alsEnabled
   if not alsEnabled then
@@ -549,24 +532,6 @@ local function toggleAntiLag()
   end
   electrics.values.fueltech_als_enabled = alsEnabled and 1 or 0
   log("I", "fueltechBoost", "Anti-lag system: " .. (alsEnabled and "enabled" or "disabled"))
-end
-
-local function setGearMultiplier(gearIdx, mul)
-  if gearIdx >= 1 and gearIdx <= 8 then
-    gearMultipliers[gearIdx] = math.max(0, math.min(mul, 1.5))
-    markBoostMapDirty()
-    guihooks.trigger("fueltechBoostByGearInfo", {
-      enabled = boostByGear,
-      multipliers = gearMultipliers
-    })
-  end
-end
-
-local function getBoostByGearInfo()
-  guihooks.trigger("fueltechBoostByGearInfo", {
-    enabled = boostByGear,
-    multipliers = gearMultipliers
-  })
 end
 
 -- Profile save/load
@@ -602,9 +567,7 @@ local function saveProfile(name)
   if not name or name == "" then return end
   local data = {
     name = name,
-    boostTable = {},
-    gearMultipliers = gearMultipliers,
-    boostByGear = boostByGear
+    boostTable = {}
   }
   for i = 1, #boostTable do
     data.boostTable[i] = {boostTable[i][1], boostTable[i][2]}
@@ -633,18 +596,9 @@ local function loadProfile(name)
       boostTable[i] = {pt[1], pt[2]}
     end
   end
-  if data.gearMultipliers then
-    for i, v in ipairs(data.gearMultipliers) do
-      gearMultipliers[i] = v
-    end
-  end
-  if data.boostByGear ~= nil then
-    boostByGear = data.boostByGear
-  end
   currentPreset = "CUSTOM"
   getBoostTable()
   sendPowerCurves()
-  getBoostByGearInfo()
   log("I", "fueltechBoost", "Loaded profile: " .. name)
 end
 
@@ -729,6 +683,11 @@ local function sendPowerCurves()
       stockTorque = baseTorque * coef
       projTorque  = baseTorque * (1 + slope * ourBoostPSI)
     end
+    -- Match the native torque-curve app exactly: it reports net (post-
+    -- friction) torque, not the raw curve-times-coef value.
+    local loss = frictionLoss(rpmVal)
+    stockTorque = math.max(stockTorque - loss, 0)
+    projTorque  = math.max(projTorque - loss, 0)
     local projPowerKw = projTorque * rpmVal * 0.10471975 / 1000
     local stockPowerKw = stockTorque * rpmVal * 0.10471975 / 1000
 
@@ -861,9 +820,18 @@ autoMax = function()
   -- table CANNOT be used for the slope: at spool-limited RPM it bakes in
   -- the spool pressure rather than the wastegate reference, under-reading
   -- the slope and overshooting the safe boost in the midband.
+  --
+  -- The engine's actual damage check compares against NET torque (post-
+  -- friction, see combustionEngine.lua's device.combustionTorque), not the
+  -- raw curve*coef value — so the true safe ceiling is
+  -- base*(1+slope*psi) - frictionLoss(rpm) <= limit, i.e. we get to solve
+  -- against (limit + frictionLoss) rather than limit alone. Ignoring this
+  -- (pre-v8.7.0) made AUTO MAX quietly leave safe power on the table.
   -- Then a 95% safety margin, clamp to a sane range, round to 0.5 PSI.
   for i, rpmVal in ipairs(rpmPoints) do
     local baseTorque = getBaseTorque(rpmVal)
+    local loss = frictionLoss(rpmVal)
+    local netCap = torqueLimit + loss
 
     local slope
     if turboModel then
@@ -874,8 +842,8 @@ autoMax = function()
     end
 
     local safePSI = 0
-    if baseTorque > 1 and slope > 1e-6 and baseTorque < torqueLimit then
-      safePSI = (torqueLimit / baseTorque - 1) / slope
+    if baseTorque > 1 and slope > 1e-6 and baseTorque < netCap then
+      safePSI = (netCap / baseTorque - 1) / slope
     end
 
     safePSI = math.max(0, math.min(safePSI * 0.95, 50))
@@ -884,8 +852,8 @@ autoMax = function()
     boostTable[i] = {rpmVal, safePSI}
 
     log("D", "fueltechBoost",
-      string.format("AutoMax @ %d rpm: baseTq=%.0fNm slope=%.4f/psi limit=%.0fNm -> safePSI=%.1f (proj %.0fNm)",
-        rpmVal, baseTorque, slope, torqueLimit, safePSI, baseTorque * (1 + slope * safePSI)))
+      string.format("AutoMax @ %d rpm: baseTq=%.0fNm slope=%.4f/psi loss=%.0fNm limit=%.0fNm -> safePSI=%.1f (net %.0fNm)",
+        rpmVal, baseTorque, slope, loss, torqueLimit, safePSI, baseTorque * (1 + slope * safePSI) - loss))
   end
 
   currentPreset = "AUTOMAX"
@@ -903,10 +871,7 @@ M.getBoostTable = getBoostTable
 M.sendPowerCurves = sendPowerCurves
 M.setPreset = setPreset
 M.autoMax = autoMax
-M.toggleBoostByGear = toggleBoostByGear
 M.toggleAntiLag = toggleAntiLag
-M.setGearMultiplier = setGearMultiplier
-M.getBoostByGearInfo = getBoostByGearInfo
 M.saveProfile = saveProfile
 M.loadProfile = loadProfile
 M.deleteProfile = deleteProfile
@@ -920,7 +885,7 @@ M.dumpState = function()
     local rpmVal, psi = boostTable[i][1], boostTable[i][2]
     proj[i] = {
       rpm = rpmVal, psi = psi,
-      projNm = math.floor(projTorqueExact(rpmVal, psi, getBaseTorque(rpmVal)) + 0.5),
+      projNm = math.floor(math.max(projTorqueExact(rpmVal, psi, getBaseTorque(rpmVal)) - frictionLoss(rpmVal), 0) + 0.5),
       spoolPSI = turboModel and math.floor(spoolLimitPSI(rpmVal) * 10 + 0.5) / 10 or -1,
     }
   end

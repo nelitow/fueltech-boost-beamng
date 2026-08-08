@@ -17,8 +17,8 @@
       <span v-if="S.hasTurbo" class="ft-dot" :class="S.active ? 'on' : 'off'"></span>
       <span v-if="S.hasTurbo" class="ft-hdr-state">{{ S.active ? 'ACTIVE' : 'STANDBY' }}</span>
       <span v-if="S.hasTurbo" class="ft-toggle ft-tune-btn" :class="{ 'ft-tune-btn-on': S.tuneOpen }"
-            @click="toggleTune">{{ S.tuneOpen ? '✕ CLOSE' : '⚙ TUNE BOOST MAP' }}</span>
-      <span class="ft-ver">8.6.0</span>
+            @click="toggleTune">{{ S.tuneOpen ? '✕ CLOSE' : '📈 POWER GRAPH' }}</span>
+      <span class="ft-ver">8.7.0</span>
     </div>
 
     <!-- Warning bar (overlay, z-index above content) -->
@@ -35,6 +35,7 @@
       <span class="ft-telem-item">CLT <b class="ft-num3">{{ S.clutchStr }}</b>%</span>
       <span class="ft-telem-item">ALT <b class="ft-num4">{{ S.altStr }}</b>m</span>
       <span class="ft-telem-item">ODO <b class="ft-num4">{{ S.odoStr }}</b>km</span>
+      <span v-if="S.hasNitrous && S.n2oArmed" class="ft-telem-item">N2O <b class="ft-num3">{{ S.n2oAddedStr }}</b>hp</span>
       <span v-if="S.brakeTemps.length" class="ft-telem-item">BRK
         <b v-for="(bt, i) in S.brakeTemps" :key="i" :style="{ color: bt.color }" class="ft-num3">{{ bt.val }}</b></span>
       <span v-if="S.cel" class="ft-telem-cel ft-blink">CEL</span>
@@ -69,14 +70,14 @@
       <div class="ft-drag-reset" @click="resetDrag">RESET</div>
     </div>
 
-    <!-- Tune overlay: on-demand, compact centered panel with boost map + power curve -->
+    <!-- Power graph overlay: on-demand, read-only projected power/torque.
+         Boost-map editing lives exclusively in the pause-menu Mods tab. -->
     <div v-if="S.tuneOpen" class="ft-tune-backdrop" @click="toggleTune"></div>
     <div v-show="S.tuneOpen" class="ft-tune-panel">
       <div class="ft-tune-title" @mousedown="tuneDragStart" @touchstart="tuneDragStart">
-        <span>⠿ TUNE — drag dots to set boost-by-RPM. Drag this bar to move the panel.</span>
+        <span>⠿ POWER GRAPH — live projected power &amp; torque. Tune the boost map from the pause-menu Mods tab. Drag this bar to move the panel.</span>
         <span class="ft-tune-close" @click="toggleTune">×</span>
       </div>
-      <div class="ft-cell ft-c-map"><canvas class="ft-cv ft-cv-map"></canvas></div>
       <div class="ft-cell ft-c-pwr"><canvas class="ft-cv ft-cv-pwr"></canvas></div>
     </div>
 
@@ -99,6 +100,13 @@
       <span v-if="S.hasABS" class="ft-btn ft-btn-abs"
             :class="{ 'ft-btn-abs-on': S.absActive && !S.absInterfering, 'ft-btn-abs-off': !S.absActive, 'ft-btn-abs-active': S.absActive && S.absInterfering }"
             @click="toggleABS">ABS</span>
+      <span v-if="S.hasNitrous" class="ft-btn ft-btn-n2o"
+            :class="{ 'ft-btn-n2o-on': S.n2oArmed, 'ft-btn-n2o-firing': S.n2oActive, 'ft-btn-n2o-locked': S.n2oArmed && !S.n2oActive && S.n2oSubStr === 'GEAR LOCKED' }"
+            @click="toggleN2O"
+            title="NITROUS — arm it, then hold full throttle above the activation RPM in an allowed gear. Shot ramps in progressively, tune the curve and gear lockouts from the pause-menu tuner.">
+        <span class="ft-btn-main">NITROUS</span>
+        <span class="ft-btn-sub">{{ S.n2oSubStr }}</span>
+      </span>
     </div>
   </div>
 </template>
@@ -131,6 +139,10 @@ const S = reactive({
   absInterfering: false,
   alsActive: false,
   alsFiring: false,
+  hasNitrous: false,
+  n2oArmed: false,
+  n2oActive: false,
+  n2oAddedStr: "0", n2oPctStr: "0", n2oSubStr: "OFF",
   loadStr: "0", fuelStr: "0", exhFlowStr: "0.0",
   clutchStr: "0", altStr: "0", odoStr: "0.0",
   weightStr: "0",
@@ -148,7 +160,7 @@ const S = reactive({
 /* ==================== PLAIN STATE ==================== */
 let rpm = 0, boost = 0, tgt = 0, speed = 0
 let oilT = 0, h2oT = 0, throttle = 0, turboRpm = 0
-let maxRPM = 8000, maxPSI = 40, peakBoost = 0, boostMax = 0
+let maxRPM = 8000, peakBoost = 0, boostMax = 0
 let gForceX = 0, gForceY = 0
 let gear = 0
 let engineLoad = 0, fuelVol = 0, exhFlow = 0
@@ -162,7 +174,8 @@ let dragActive = false, dragStart = 0, drag100t = 0, drag200t = 0
 let map = [[2000, 5], [3000, 10], [4000, 15], [5000, 20], [6000, 20], [7000, 18]]
 let pwrData = null
 let safetyCut = false, lastElectrics = null
-let tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0
+let tcToggleDebounce = 0, alsToggleDebounce = 0, absToggleDebounce = 0, n2oToggleDebounce = 0
+let n2oLevel = 0, n2oAddedHp = 0, n2oGearMul = 1
 
 /* ==================== EVENTS (guihooks → Vue event bus) ==================== */
 events.on("fueltechBoostTable", d => {
@@ -281,11 +294,16 @@ function toggleABS() {
   absToggleDebounce = 10
   luaCall('controller.getControllerSafe("fueltechDrivetrain").toggleDriveMode("absController")')
 }
+function toggleN2O() {
+  S.n2oArmed = !S.n2oArmed
+  n2oToggleDebounce = 10
+  luaCall('controller.getControllerSafe("fueltechNitrous").toggleArm()')
+}
 function toggleTune() {
   S.tuneOpen = !S.tuneOpen
   lay = null
   if (appW && appH) doLayout(appW, appH)
-  if (S.tuneOpen) { try { drawBoostMap(); drawPower() } catch (e) {} }
+  if (S.tuneOpen) { try { drawPower() } catch (e) {} }
 }
 function resetDrag() {
   dragActive = false; dragStart = 0; drag100t = 0; drag200t = 0
@@ -313,7 +331,7 @@ function tuneDragMove(ev) {
   tuneOffsetY = tuneDrag.baseY + (pt.clientY - tuneDrag.startY)
   lay = null
   if (appW && appH) doLayout(appW, appH)
-  try { drawBoostMap(); drawPower() } catch (e) {}
+  try { drawPower() } catch (e) {}
 }
 function tuneDragEnd() {
   tuneDrag = null
@@ -412,12 +430,11 @@ function doLayout(W, H) {
   }
 
   const tunePanel = q(".ft-tune-panel")
-  const mapEl = q(".ft-c-map")
   const pwrEl = q(".ft-c-pwr")
-  let tuneMapW = 0, tuneMapH = 0, tunePwrW = 0
+  let tunePwrW = 0, tunePwrH = 0
   if (S.tuneOpen && tunePanel) {
-    const tuneW = cl(Math.round(W * 0.7), 400, 760)
-    const tuneH = cl(Math.round(H * 0.88), 180, 380)
+    const tuneW = cl(Math.round(W * 0.45), 320, 560)
+    const tuneH = cl(Math.round(H * 0.7), 160, 320)
     const baseX = (W - tuneW) / 2
     const baseY = (H - tuneH) / 2
     const minX = -tuneW + 60, maxX = W - 60
@@ -427,15 +444,11 @@ function doLayout(W, H) {
     tunePanel.style.cssText = "position:absolute;z-index:31;box-sizing:border-box;left:" + tuneX + "px;top:" + tuneY + "px;width:" + tuneW + "px;height:" + tuneH + "px;background:rgba(17,16,26,0.96);border:1px solid rgba(34,204,238,0.4);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.6);padding:6px;overflow:hidden"
 
     const titleH = 22, pad = 6
-    const inW = tuneW - pad * 2
-    const inH = tuneH - titleH - pad
-    const halfW = Math.floor(inW / 2) - 3
-    tuneMapW = halfW; tuneMapH = inH; tunePwrW = halfW
-    if (mapEl) mapEl.style.cssText = "position:absolute;box-sizing:border-box;left:" + pad + "px;top:" + titleH + "px;width:" + halfW + "px;height:" + inH + "px;overflow:hidden;" + GRAPH_BG
-    if (pwrEl) pwrEl.style.cssText = "position:absolute;box-sizing:border-box;left:" + (pad + halfW + 6) + "px;top:" + titleH + "px;width:" + halfW + "px;height:" + inH + "px;overflow:hidden;" + GRAPH_BG
+    tunePwrW = tuneW - pad * 2
+    tunePwrH = tuneH - titleH - pad
+    if (pwrEl) pwrEl.style.cssText = "position:absolute;box-sizing:border-box;left:" + pad + "px;top:" + titleH + "px;width:" + tunePwrW + "px;height:" + tunePwrH + "px;overflow:hidden;" + GRAPH_BG
   } else {
     if (tunePanel) tunePanel.style.cssText = "display:none"
-    if (mapEl) mapEl.style.display = "none"
     if (pwrEl) pwrEl.style.display = "none"
   }
 
@@ -450,14 +463,12 @@ function doLayout(W, H) {
     h2oW: hasTurbo ? col2W : col3W, h2oH: rowH,
     miniW: hasTurbo ? cw2(3) : 0, miniH: rowH,
     gfW: hasTurbo ? col2W : col3W, gfH: rowH,
-    graphW: tuneMapW, graphH: tuneMapH,
-    pwrW: tunePwrW,
+    pwrW: tunePwrW, pwrH: tunePwrH,
   }
   return lay
 }
 
 /* ==================== CANVAS ==================== */
-let cvsMap = null, ctxMap = null
 let cvsPwr = null, ctxPwr = null
 let cvsOil = null, ctxOil = null
 let cvsH2o = null, ctxH2o = null
@@ -470,19 +481,6 @@ function initCanvases() {
   if (!cvsH2o) { try { cvsH2o = q(".ft-cv-h2o"); if (cvsH2o) ctxH2o = cvsH2o.getContext("2d") } catch (e) {} }
   if (!cvsGf) { try { cvsGf = q(".ft-cv-gforce"); if (cvsGf) ctxGf = cvsGf.getContext("2d") } catch (e) {} }
   if (!cvsMini) { try { cvsMini = q(".ft-cv-minimap"); if (cvsMini) ctxMini = cvsMini.getContext("2d") } catch (e) {} }
-  if (!cvsMap) {
-    try {
-      cvsMap = q(".ft-cv-map")
-      if (cvsMap) {
-        ctxMap = cvsMap.getContext("2d")
-        cvsMap.addEventListener("mousedown", onDown); cvsMap.addEventListener("mousemove", onMove)
-        cvsMap.addEventListener("mouseup", onUp); cvsMap.addEventListener("mouseleave", onUp)
-        cvsMap.addEventListener("touchstart", onTouchDown, { passive: false })
-        cvsMap.addEventListener("touchmove", onTouchMove, { passive: false })
-        cvsMap.addEventListener("touchend", onUp); cvsMap.addEventListener("touchcancel", onUp)
-      }
-    } catch (e) {}
-  }
   if (!cvsPwr) { try { cvsPwr = q(".ft-cv-pwr"); if (cvsPwr) ctxPwr = cvsPwr.getContext("2d") } catch (e) {} }
 }
 
@@ -653,71 +651,6 @@ function drawMiniBoostMap() {
   ctx.fillText("BOOST MAP", pad + 2, pad + 1)
 }
 
-/* ==================== BOOST MAP (TUNE panel) ==================== */
-let BP = {}, BGW = 0, BGH = 0, BMW2 = 0, BMH2 = 0
-function drawBoostMap() {
-  initCanvases(); if (!ctxMap || !lay) return
-  const sz = sizeCvs(cvsMap, lay.graphW, lay.graphH); if (!sz) return
-  BMW2 = sz.w; BMH2 = sz.h; const ctx = ctxMap
-  const g = drawGrid(ctx, BMW2, BMH2, maxRPM, maxPSI); if (!g) return
-  BP = g.p; BGW = g.gw; BGH = g.gh
-  const tx = r => BP.l + cl(r / maxRPM, 0, 1) * BGW
-  const ty = v => BP.t + BGH - cl(v / maxPSI, 0, 1) * BGH
-
-  if (boostMax > 0 && boostMax < maxPSI) {
-    const limY = ty(boostMax)
-    ctx.fillStyle = "rgba(167,139,250,0.06)"
-    ctx.fillRect(BP.l, BP.t, BGW, limY - BP.t)
-    ctx.save()
-    ctx.setLineDash([6, 4])
-    ctx.strokeStyle = "rgba(167,139,250,0.55)"
-    ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(BP.l, limY); ctx.lineTo(BP.l + BGW, limY); ctx.stroke()
-    ctx.restore()
-    ctx.font = cl(g.fs, 9, 12).toFixed(0) + "px Consolas,monospace"
-    ctx.textAlign = "right"; ctx.textBaseline = "bottom"
-    ctx.fillStyle = "#a78bfa"
-    ctx.fillText("TURBO RATED MAX " + boostMax.toFixed(1) + " PSI", BP.l + BGW - 4, limY - 2)
-  }
-
-  const steps = Math.max(Math.round(BGW / 2), 20), step = maxRPM / steps
-  ctx.beginPath(); ctx.moveTo(tx(0), ty(0))
-  for (let i = 0; i <= steps; i++) ctx.lineTo(tx(step * i), ty(lerpMap(step * i)))
-  ctx.lineTo(tx(maxRPM), ty(0)); ctx.closePath()
-  const grd = ctx.createLinearGradient(0, BP.t, 0, BP.t + BGH)
-  grd.addColorStop(0, "rgba(34,204,238,0.1)"); grd.addColorStop(1, "rgba(34,204,238,0)")
-  ctx.fillStyle = grd; ctx.fill()
-
-  ctx.beginPath(); ctx.moveTo(tx(0), ty(lerpMap(0)))
-  for (let i = 1; i <= steps; i++) ctx.lineTo(tx(step * i), ty(lerpMap(step * i)))
-  const lw = cl(BMW2 * 0.004, 1, 2.5)
-  ctx.strokeStyle = "#22ccee"; ctx.lineWidth = lw; ctx.lineJoin = "round"; ctx.stroke()
-
-  const dr = cl(BMW2 * 0.008, 3, 7)
-  for (let i = 0; i < map.length; i++) {
-    const bx = tx(map[i][0]), by = ty(map[i][1]), hot = (i === hoverIdx || i === dragIdx)
-    if (hot) { ctx.beginPath(); ctx.arc(bx, by, dr + 6, 0, 6.283); ctx.fillStyle = "rgba(34,204,238,0.08)"; ctx.fill() }
-    ctx.beginPath(); ctx.arc(bx, by, dr + 1, 0, 6.283); ctx.strokeStyle = hot ? "#67e0f9" : "rgba(34,204,238,0.3)"; ctx.lineWidth = 1; ctx.stroke()
-    ctx.beginPath(); ctx.arc(bx, by, dr, 0, 6.283); ctx.fillStyle = hot ? "#67e0f9" : "#22ccee"; ctx.fill()
-    ctx.beginPath(); ctx.arc(bx, by, dr * 0.3, 0, 6.283); ctx.fillStyle = "rgba(15,14,23,0.9)"; ctx.fill()
-    if (hot) {
-      ctx.font = "bold " + cl(g.fs + 1, 10, 14).toFixed(0) + "px Consolas,monospace"
-      ctx.fillStyle = "#dde0ec"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"
-      ctx.fillText(map[i][0] + " / " + map[i][1].toFixed(1) + " PSI", bx, by - dr - 6)
-    }
-  }
-
-  if (!S.active || rpm < 50) return
-  const cx2 = cl(tx(rpm), BP.l, BMW2 - BP.r), cy2 = cl(ty(boost), BP.t, BP.t + BGH), tgy = cl(ty(tgt), BP.t, BP.t + BGH)
-  const vg = ctx.createLinearGradient(0, BP.t, 0, BP.t + BGH)
-  vg.addColorStop(0, "rgba(167,139,250,0)"); vg.addColorStop(0.5, "rgba(167,139,250,0.05)"); vg.addColorStop(1, "rgba(167,139,250,0)")
-  ctx.fillStyle = vg; ctx.fillRect(cx2 - 0.5, BP.t, 1, BGH)
-  ctx.beginPath(); ctx.arc(cx2, tgy, dr * 1.5, 0, 6.283); ctx.strokeStyle = "rgba(34,204,238,0.4)"; ctx.lineWidth = cl(lw * 0.5, 0.5, 1); ctx.stroke()
-  const dotC = "#a78bfa"
-  ctx.shadowColor = dotC; ctx.shadowBlur = cl(BMW2 * 0.01, 3, 10)
-  ctx.beginPath(); ctx.arc(cx2, cy2, dr * 1.2, 0, 6.283); ctx.fillStyle = dotC; ctx.fill(); ctx.shadowBlur = 0
-}
-
 /* ==================== POWER / TORQUE ==================== */
 // Renders the lua-computed curves only (fueltechPowerCurves). The lua side
 // replicates BeamNG's exact turbo model (spool-aware, efficiency-curve
@@ -726,7 +659,7 @@ function drawBoostMap() {
 function drawPower() {
   initCanvases(); if (!ctxPwr || !lay) return
   if (!pwrData) return
-  const sz = sizeCvs(cvsPwr, lay.pwrW, lay.graphH); if (!sz) return
+  const sz = sizeCvs(cvsPwr, lay.pwrW, lay.pwrH); if (!sz) return
   const w = sz.w, h = sz.h, ctx = ctxPwr
 
   const eR = (pwrData && pwrData.maxRPM) || 7000
@@ -849,61 +782,13 @@ function drawPower() {
   }
 }
 
-/* ==================== BOOST-MAP DRAG (mouse + touch) ==================== */
-let dragIdx = -1, hoverIdx = -1
-const GRAB_R = 18
-const boostTx = r => BP.l + cl(r / maxRPM, 0, 1) * BGW
-const boostTy = v => BP.t + BGH - cl(v / maxPSI, 0, 1) * BGH
-const fromX = px => cl((px - BP.l) / BGW, 0, 1) * maxRPM
-const fromY = py => cl((BP.t + BGH - py) / BGH, 0, 1) * maxPSI
-function nearestPt(mx, my) {
-  let b = -1, bd = GRAB_R * GRAB_R
-  for (let i = 0; i < map.length; i++) {
-    const dx = boostTx(map[i][0]) - mx, dy = boostTy(map[i][1]) - my
-    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; b = i }
-  }
-  return b
-}
-
-function onDown(e) { const r = cvsMap.getBoundingClientRect(); dragIdx = nearestPt(e.clientX - r.left, e.clientY - r.top) }
-function onMove(e) {
-  const r = cvsMap.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top
-  if (dragIdx >= 0) {
-    map[dragIdx][0] = cl(Math.round(fromX(mx) / 100) * 100, 1000, 9000)
-    map[dragIdx][1] = cl(Math.round(fromY(my) * 2) / 2, 0, maxPSI)
-    drawBoostMap(); cvsMap.style.cursor = "grabbing"
-  } else {
-    const h2 = nearestPt(mx, my)
-    if (h2 !== hoverIdx) { hoverIdx = h2; cvsMap.style.cursor = h2 >= 0 ? "grab" : "default"; drawBoostMap() }
-  }
-}
-function onTouchDown(e) { e.preventDefault(); const t = e.touches[0]; const r = cvsMap.getBoundingClientRect(); dragIdx = nearestPt(t.clientX - r.left, t.clientY - r.top) }
-function onTouchMove(e) {
-  e.preventDefault(); if (dragIdx < 0) return
-  const t = e.touches[0]; const r = cvsMap.getBoundingClientRect(), mx = t.clientX - r.left, my = t.clientY - r.top
-  map[dragIdx][0] = cl(Math.round(fromX(mx) / 100) * 100, 1000, 9000)
-  map[dragIdx][1] = cl(Math.round(fromY(my) * 2) / 2, 0, maxPSI)
-  drawBoostMap()
-}
-function onUp() {
-  if (dragIdx >= 0) {
-    S.preset = "CUSTOM"
-    map.sort((a, b) => a[0] - b[0])
-    for (let i = 0; i < map.length; i++) {
-      luaCall('controller.getControllerSafe("fueltechBoostController").setPoint(' + (i + 1) + "," + map[i][0] + "," + map[i][1] + ")")
-    }
-    dragIdx = -1
-    setTimeout(() => luaCall('controller.getControllerSafe("fueltechBoostController").sendPowerCurves()'), 100)
-    drawBoostMap()
-  }
-  if (cvsMap) cvsMap.style.cursor = hoverIdx >= 0 ? "grab" : "default"
-}
-
 /* ==================== DRAW-ALL / WARNINGS / DRAG TIMER ==================== */
 function drawAll() {
   drawOilH2oGauges(); drawGForce()
   if (hasTurbo) drawMiniBoostMap()
-  if (hasTurbo && S.tuneOpen) { drawBoostMap(); drawPower() }
+  // Power/torque graph only renders when the panel is open — boost map
+  // editing lives exclusively in the pause-menu Mods tab now.
+  if (hasTurbo && S.tuneOpen) { drawPower() }
 }
 
 function updateWarnings() {
@@ -913,6 +798,7 @@ function updateWarnings() {
   if (oilT > 130) w.push("OIL TEMP " + Math.round(oilT) + "°C")
   if (h2oT > 110) w.push("COOLANT " + Math.round(h2oT) + "°C")
   if (S.alsFiring) w.push("ALS ACTIVE")
+  if (S.n2oActive) w.push("N2O " + S.n2oPctStr + "%")
   if (S.tcsCut > 0.05) w.push("TC -" + Math.round(S.tcsCut * 100) + "%")
   if (S.absInterfering) w.push("ABS")
   S.warnings = w
@@ -978,6 +864,20 @@ useStreams(["electrics", "engineInfo", "wheelThermalData"], s => {
     if (absToggleDebounce > 0) absToggleDebounce--
     else S.absActive = !!(s.electrics.abs)
     S.absInterfering = !!(s.electrics.absActive)
+
+    // Nitrous — presence is detected by the electrics key existing at all:
+    // the lua controller never publishes it on vehicles where init() bailed
+    // out (no engine, or a real N2O part already installed).
+    // fueltech_n2o_available is set exactly once per controller attach
+    // (init()), regardless of enabled state — unlike fueltech_n2o_armed,
+    // which reset()/toggleArm() can leave defined even when disabled.
+    S.hasNitrous = s.electrics.fueltech_n2o_available === 1
+    if (n2oToggleDebounce > 0) n2oToggleDebounce--
+    else S.n2oArmed = !!(s.electrics.fueltech_n2o_armed)
+    S.n2oActive = !!(s.electrics.fueltech_n2o_active)
+    n2oLevel = s.electrics.fueltech_n2o_level || 0
+    n2oAddedHp = s.electrics.fueltech_n2o_addedHp || 0
+    n2oGearMul = (s.electrics.fueltech_n2o_gearMul != null) ? s.electrics.fueltech_n2o_gearMul : 1
   }
 
   const hasFI = !!(s.electrics && s.electrics.fueltech_active)
@@ -1006,6 +906,12 @@ useStreams(["electrics", "engineInfo", "wheelThermalData"], s => {
   S.altStr = Math.round(altitude).toString()
   S.odoStr = (odometer / 1000).toFixed(1)
   S.weightStr = Math.round(vehMass).toString()
+  S.n2oAddedStr = Math.round(n2oAddedHp).toString()
+  S.n2oPctStr = Math.round(n2oLevel * 100).toString()
+  if (!S.n2oArmed) S.n2oSubStr = "OFF"
+  else if (S.n2oActive) S.n2oSubStr = S.n2oPctStr + "%"
+  else if (n2oGearMul <= 0) S.n2oSubStr = "GEAR LOCKED"
+  else S.n2oSubStr = "READY"
 
   const bts = []
   const wheelNames = ["FL", "FR", "RL", "RR"]
@@ -1074,15 +980,5 @@ onUnmounted(() => {
   if (initTimer) clearTimeout(initTimer)
   if (resizeObserver) resizeObserver.disconnect()
   tuneDragEnd()
-  if (cvsMap) {
-    cvsMap.removeEventListener("mousedown", onDown)
-    cvsMap.removeEventListener("mousemove", onMove)
-    cvsMap.removeEventListener("mouseup", onUp)
-    cvsMap.removeEventListener("mouseleave", onUp)
-    cvsMap.removeEventListener("touchstart", onTouchDown)
-    cvsMap.removeEventListener("touchmove", onTouchMove)
-    cvsMap.removeEventListener("touchend", onUp)
-    cvsMap.removeEventListener("touchcancel", onUp)
-  }
 })
 </script>

@@ -4,7 +4,7 @@
       <span class="ftk-brand">FUELTECH</span>
       <span class="ftk-sub">BOOST CONTROLLER</span>
       <span v-if="pkNm > 0" class="ftk-peaks">▲ {{ pkNm }}<i>Nm</i> {{ pkHp }}<i>HP</i></span>
-      <span class="ftk-ver">v8.6.0</span>
+      <span class="ftk-ver">v8.7.0</span>
     </div>
 
     <div class="ftk-row-label">Boost map — drag the dots, changes apply instantly</div>
@@ -39,6 +39,52 @@
       </button>
     </div>
 
+    <template v-if="n2oAvailable === true">
+      <div class="ftk-row-label">Nitrous — progressive shot, tune by RPM</div>
+      <canvas ref="n2oCvs" class="ftk-canvas ftk-n2o"
+              @mousedown="n2oDown" @mousemove="n2oMove" @mouseup="n2oUp" @mouseleave="n2oUp"
+              @touchstart.prevent="n2oTouchDown" @touchmove.prevent="n2oTouchMove" @touchend="n2oUp"></canvas>
+
+      <div class="ftk-row-label">Nitrous by gear — tap to cycle OFF / HALF / FULL</div>
+      <div class="ftk-geargrid">
+        <button v-for="(m, i) in n2oGearMul.slice(0, n2oNumGears)" :key="i" class="ftk-gear-btn"
+                :class="{ 'ftk-gear-off': m === 0, 'ftk-gear-half': m > 0 && m < 1, 'ftk-gear-full': m >= 1 }"
+                @click="cycleGear(i)">
+          <span class="ftk-gear-num">G{{ i + 1 }}</span>
+          <span class="ftk-gear-pct">{{ Math.round(m * 100) }}%</span>
+        </button>
+      </div>
+
+      <div class="ftk-row-label">Nitrous presets</div>
+      <div class="ftk-actions">
+        <button v-for="p in n2oPresets" :key="p.id" class="ftk-btn" @click="applyN2OPreset(p.id)">
+          <span class="ftk-btn-label">{{ p.label }}</span>
+          <span class="ftk-btn-hint">{{ p.hint }}</span>
+        </button>
+      </div>
+
+      <div class="ftk-row-label">Nitrous settings</div>
+      <div class="ftk-n2o-settings">
+        <label class="ftk-slider-row">
+          <span>Activation RPM</span>
+          <input type="range" min="1000" max="7000" step="100" v-model.number="n2oActivationRpm" @change="applyN2OSettings">
+          <span class="ftk-slider-val">{{ n2oActivationRpm }}</span>
+        </label>
+        <label class="ftk-slider-row">
+          <span>Ramp-in time</span>
+          <input type="range" min="0.2" max="3" step="0.1" v-model.number="n2oRampUp" @change="applyN2OSettings">
+          <span class="ftk-slider-val">{{ n2oRampUp.toFixed(1) }}s</span>
+        </label>
+      </div>
+
+      <div class="ftk-actions">
+        <button class="ftk-btn" :class="{ 'ftk-btn-active': n2oArmed }" @click="toggleN2OArm">
+          <span class="ftk-btn-label">ARM N2O</span>
+          <span class="ftk-btn-hint">{{ n2oArmed ? 'armed' : 'toggle arm' }}</span>
+        </button>
+      </div>
+    </template>
+
     <div class="ftk-foot">
       <span v-if="feedback" class="ftk-feedback">{{ feedback }}</span>
       <span v-else>Same tuner as the FuelTech Dashboard HUD app — edits sync both ways.</span>
@@ -59,7 +105,6 @@ const { api, events } = useBridge()
 /* ── Nelitomorphism canvas palette ── */
 const PAL = {
   accent: "#22ccee", accentHi: "#67e0f9", accent2: "#a78bfa",
-  ok: "#34d399", warn: "#fbbf24", danger: "#ff3355",
   torque: "#f87171", power: "#22ccee",
   ink: "#eceaf4", muted: "#8b8fa8", grid: "#232336",
   bg: "rgba(15,14,23,0.65)",
@@ -84,6 +129,185 @@ let boostMax = 0
 let maxRPM = 8000
 const maxPSI = 40
 let feedbackTimer = null
+
+/* ── Nitrous ── */
+const n2oPresets = [
+  { id: "OFF", label: "OFF", hint: "zero shot" },
+  { id: "MILD", label: "MILD", hint: "street shot" },
+  { id: "AGGRESSIVE", label: "AGGRESSIVE", hint: "big shot" },
+]
+const n2oCvs = ref(null)
+// Defaults to hidden until the controller confirms it's actually usable —
+// reset()/toggleArm() can leave other nitrous electrics keys defined even
+// on a disabled controller, so "unknown" must never render as "shown".
+const n2oAvailable = ref(false)
+const n2oArmed = ref(false)
+const n2oActivationRpm = ref(2500)
+const n2oRampUp = ref(1.2)
+const n2oGearMul = ref([0, 0.5, 1, 1, 1, 1, 1, 1])
+const n2oNumGears = ref(6)
+let n2oMap = [[2500, 15], [3500, 25], [4500, 35], [5500, 40], [6500, 35], [7500, 25]]
+let n2oRampDown = 0.35
+let n2oDragIdx = -1, n2oHoverIdx = -1
+let n2oMaxHp = 100
+
+function requestN2OData() {
+  luaCall('controller.getControllerSafe("fueltechNitrous").getAvailability()')
+  luaCall('controller.getControllerSafe("fueltechNitrous").getNitrousTable()')
+  luaCall('controller.getControllerSafe("fueltechNitrous").getGearInfo()')
+  luaCall('controller.getControllerSafe("fueltechNitrous").getSettings()')
+}
+
+function onN2OAvailable(d) {
+  n2oAvailable.value = !!(d && d.available)
+}
+function onN2OTable(d) {
+  if (d && d.length) {
+    n2oMap = []
+    for (let i = 0; i < d.length; i++) n2oMap.push([d[i].rpm, d[i].hp])
+    n2oMaxHp = Math.max(100, Math.ceil((Math.max(...n2oMap.map(p => p[1])) * 1.25) / 10) * 10)
+    drawN2O()
+  }
+}
+function onN2OGearInfo(d) {
+  if (d && d.multipliers) n2oGearMul.value = d.multipliers.slice(0, 8)
+  if (d && d.numGears) n2oNumGears.value = d.numGears
+}
+function onN2OSettings(d) {
+  if (!d) return
+  n2oArmed.value = !!d.armed
+  if (d.rampUp) n2oRampUp.value = d.rampUp
+  if (d.rampDown) n2oRampDown = d.rampDown
+  if (d.activationRPM) n2oActivationRpm.value = d.activationRPM
+}
+
+function cycleGear(i) {
+  const cur = n2oGearMul.value[i]
+  const next = cur >= 1 ? 0 : cur > 0 ? 1 : 0.5
+  const arr = n2oGearMul.value.slice()
+  arr[i] = next
+  n2oGearMul.value = arr
+  luaCall('controller.getControllerSafe("fueltechNitrous").setGearMultiplier(' + (i + 1) + "," + next + ")")
+}
+function applyN2OPreset(id) {
+  luaCall('controller.getControllerSafe("fueltechNitrous").setPreset("' + id + '")')
+  flash("Applied " + id + " nitrous shot.")
+  setTimeout(() => luaCall('controller.getControllerSafe("fueltechNitrous").getNitrousTable()'), 150)
+}
+function toggleN2OArm() {
+  n2oArmed.value = !n2oArmed.value
+  luaCall('controller.getControllerSafe("fueltechNitrous").toggleArm()')
+  flash(n2oArmed.value ? "Nitrous armed." : "Nitrous disarmed.")
+}
+function applyN2OSettings() {
+  luaCall('controller.getControllerSafe("fueltechNitrous").setActivationRPM(' + n2oActivationRpm.value + ")")
+  luaCall('controller.getControllerSafe("fueltechNitrous").setRampTimes(' + n2oRampUp.value + "," + n2oRampDown + ")")
+}
+
+/* ── Nitrous curve canvas (RPM vs added HP) ── */
+function n2oGeom() {
+  const s = setupCanvas(n2oCvs.value)
+  if (!s) return null
+  return { ...s, gw: s.w - PADL - PADR, gh: s.h - PADT - PADB }
+}
+const n2x = (g, r) => PADL + cl(r / maxRPM, 0, 1) * g.gw
+const n2y = (g, hp) => PADT + g.gh - cl(hp / n2oMaxHp, 0, 1) * g.gh
+function lerpN2O(r) {
+  if (!n2oMap.length) return 0
+  if (r <= n2oMap[0][0]) return n2oMap[0][1]
+  if (r >= n2oMap[n2oMap.length - 1][0]) return n2oMap[n2oMap.length - 1][1]
+  for (let i = 0; i < n2oMap.length - 1; i++) {
+    if (r >= n2oMap[i][0] && r <= n2oMap[i + 1][0]) {
+      const span = n2oMap[i + 1][0] - n2oMap[i][0]
+      if (span < 1) return n2oMap[i][1]
+      return n2oMap[i][1] + (n2oMap[i + 1][1] - n2oMap[i][1]) * ((r - n2oMap[i][0]) / span)
+    }
+  }
+  return 0
+}
+function drawN2O() {
+  const g = n2oGeom()
+  if (!g) return
+  const { ctx, w, h } = g
+  ctx.clearRect(0, 0, w, h)
+  ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, w, h)
+
+  ctx.strokeStyle = PAL.grid; ctx.lineWidth = 0.5
+  ctx.font = "9px Consolas,monospace"; ctx.fillStyle = PAL.muted
+  for (let i = 0; i <= 4; i++) {
+    const yy = PADT + (g.gh / 4) * i
+    ctx.beginPath(); ctx.moveTo(PADL, yy); ctx.lineTo(w - PADR, yy); ctx.stroke()
+    ctx.textAlign = "right"
+    ctx.fillText((n2oMaxHp - (n2oMaxHp / 4) * i).toFixed(0) + "hp", PADL - 4, yy + 3)
+  }
+  for (let i = 0; i <= 4; i++) {
+    const xx = PADL + (g.gw / 4) * i
+    ctx.beginPath(); ctx.moveTo(xx, PADT); ctx.lineTo(xx, PADT + g.gh); ctx.stroke()
+    ctx.textAlign = "center"
+    ctx.fillText(Math.round((maxRPM / 4) * i / 1000) + "k", xx, h - 8)
+  }
+
+  const steps = 40
+  ctx.beginPath(); ctx.moveTo(n2x(g, 0), n2y(g, 0))
+  for (let s = 0; s <= steps; s++) ctx.lineTo(n2x(g, (maxRPM / steps) * s), n2y(g, lerpN2O((maxRPM / steps) * s)))
+  ctx.lineTo(n2x(g, maxRPM), n2y(g, 0)); ctx.closePath()
+  const grad = ctx.createLinearGradient(0, PADT, 0, PADT + g.gh)
+  grad.addColorStop(0, "rgba(167,139,250,0.30)"); grad.addColorStop(1, "rgba(167,139,250,0.02)")
+  ctx.fillStyle = grad; ctx.fill()
+  ctx.beginPath(); ctx.moveTo(n2x(g, 0), n2y(g, lerpN2O(0)))
+  for (let s = 1; s <= steps; s++) ctx.lineTo(n2x(g, (maxRPM / steps) * s), n2y(g, lerpN2O((maxRPM / steps) * s)))
+  ctx.strokeStyle = PAL.accent2; ctx.lineWidth = 1.5; ctx.lineJoin = "round"; ctx.stroke()
+
+  for (let i = 0; i < n2oMap.length; i++) {
+    const bx = n2x(g, n2oMap[i][0]), by = n2y(g, n2oMap[i][1])
+    const hot = i === n2oHoverIdx || i === n2oDragIdx
+    ctx.beginPath(); ctx.arc(bx, by, hot ? 7 : 5, 0, 6.283)
+    ctx.fillStyle = hot ? "#c4b0fc" : PAL.accent2; ctx.fill()
+    ctx.beginPath(); ctx.arc(bx, by, 2, 0, 6.283); ctx.fillStyle = "rgba(15,14,23,0.9)"; ctx.fill()
+    if (hot) {
+      ctx.font = "bold 11px Consolas,monospace"; ctx.fillStyle = PAL.ink; ctx.textAlign = "center"
+      ctx.fillText(n2oMap[i][0] + " / " + n2oMap[i][1].toFixed(0) + " hp", bx, by - 12)
+    }
+  }
+}
+function n2oNearest(x, y) {
+  const g = n2oGeom(); if (!g) return -1
+  let best = -1, bd = 18 * 18
+  for (let i = 0; i < n2oMap.length; i++) {
+    const dx = n2x(g, n2oMap[i][0]) - x, dy = n2y(g, n2oMap[i][1]) - y
+    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = i }
+  }
+  return best
+}
+function n2oPtFromEvent(e) {
+  const r = n2oCvs.value.getBoundingClientRect()
+  const p = (e.touches && e.touches[0]) || e
+  return { x: p.clientX - r.left, y: p.clientY - r.top }
+}
+function n2oDown(e) { const p = n2oPtFromEvent(e); n2oDragIdx = n2oNearest(p.x, p.y) }
+function n2oTouchDown(e) { n2oDown(e) }
+function n2oMoveTo(x, y) {
+  const g = n2oGeom(); if (!g || n2oDragIdx < 0) return
+  n2oMap[n2oDragIdx][0] = cl(Math.round(((x - PADL) / g.gw) * maxRPM / 100) * 100, 1000, Math.max(2000, maxRPM - 100))
+  n2oMap[n2oDragIdx][1] = cl(Math.round(((PADT + g.gh - y) / g.gh) * n2oMaxHp), 0, n2oMaxHp)
+  drawN2O()
+}
+function n2oMove(e) {
+  const p = n2oPtFromEvent(e)
+  if (n2oDragIdx >= 0) { n2oMoveTo(p.x, p.y); return }
+  const h2 = n2oNearest(p.x, p.y)
+  if (h2 !== n2oHoverIdx) { n2oHoverIdx = h2; n2oCvs.value.style.cursor = h2 >= 0 ? "grab" : "default"; drawN2O() }
+}
+function n2oTouchMove(e) { const p = n2oPtFromEvent(e); n2oMoveTo(p.x, p.y) }
+function n2oUp() {
+  if (n2oDragIdx < 0) return
+  n2oMap.sort((a, b) => a[0] - b[0])
+  for (let i = 0; i < n2oMap.length; i++) {
+    luaCall('controller.getControllerSafe("fueltechNitrous").setPoint(' + (i + 1) + "," + n2oMap[i][0] + "," + n2oMap[i][1] + ")")
+  }
+  n2oDragIdx = -1
+  drawN2O()
+}
 
 function flash(msg) {
   feedback.value = msg
@@ -154,8 +378,17 @@ function setupCanvas(cvs) {
   const dpr = window.devicePixelRatio || 1
   const w = cvs.clientWidth, h = cvs.clientHeight
   if (w < 20 || h < 20) return null
-  cvs.width = Math.round(w * dpr)
-  cvs.height = Math.round(h * dpr)
+  // Reassigning canvas.width/height ALWAYS clears the bitmap, even to the
+  // same value — and this runs on every hover-hit-test (nearest()), not
+  // just on actual redraws. Without this guard the canvas got blanked on
+  // nearly every mousemove and only repainted when the hover index
+  // happened to change, which is exactly what made dragging unusable
+  // while looking fine at rest.
+  const pw = Math.round(w * dpr), ph = Math.round(h * dpr)
+  if (cvs.width !== pw || cvs.height !== ph) {
+    cvs.width = pw
+    cvs.height = ph
+  }
   const ctx = cvs.getContext("2d")
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   return { ctx, w, h }
@@ -339,14 +572,23 @@ let redrawTimer = null
 onMounted(() => {
   events.on("fueltechBoostTable", onBoostTable)
   events.on("fueltechPowerCurves", onPowerCurves)
+  events.on("fueltechNitrousTable", onN2OTable)
+  events.on("fueltechNitrousGearInfo", onN2OGearInfo)
+  events.on("fueltechNitrousSettings", onN2OSettings)
+  events.on("fueltechNitrousAvailable", onN2OAvailable)
   requestData()
+  requestN2OData()
   // canvases have zero size until the pause layout settles
-  nextTick(() => { drawMap(); drawPwr() })
-  redrawTimer = setTimeout(() => { drawMap(); drawPwr() }, 400)
+  nextTick(() => { drawMap(); drawPwr(); drawN2O() })
+  redrawTimer = setTimeout(() => { drawMap(); drawPwr(); drawN2O() }, 400)
 })
 onUnmounted(() => {
   events.off("fueltechBoostTable", onBoostTable)
   events.off("fueltechPowerCurves", onPowerCurves)
+  events.off("fueltechNitrousTable", onN2OTable)
+  events.off("fueltechNitrousGearInfo", onN2OGearInfo)
+  events.off("fueltechNitrousSettings", onN2OSettings)
+  events.off("fueltechNitrousAvailable", onN2OAvailable)
   if (redrawTimer) clearTimeout(redrawTimer)
   if (feedbackTimer) clearTimeout(feedbackTimer)
 })
@@ -435,6 +677,61 @@ onUnmounted(() => {
 }
 .ftk-map { height: 150px; cursor: default; }
 .ftk-pwr { height: 130px; }
+.ftk-n2o { height: 130px; cursor: default; }
+
+.ftk-geargrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+  gap: 6px;
+}
+.ftk-gear-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-1);
+  cursor: pointer;
+  font-family: "Geist Mono", Consolas, monospace;
+  transition: border-color 120ms ease, background 120ms ease;
+
+  &:hover { border-color: var(--accent-2); }
+
+  .ftk-gear-num { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+  .ftk-gear-pct { font-size: 9px; color: var(--text-2); }
+}
+.ftk-gear-off .ftk-gear-pct { color: hsl(348, 90%, 65%); }
+.ftk-gear-half { border-color: var(--warn); }
+.ftk-gear-half .ftk-gear-pct { color: var(--warn); }
+.ftk-gear-full { border-color: var(--accent-2); background: var(--bg-2); }
+.ftk-gear-full .ftk-gear-pct { color: var(--accent-2); }
+
+.ftk-n2o-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ftk-slider-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent-2);
+  }
+  .ftk-slider-val {
+    text-align: right;
+    font-family: "Geist Mono", Consolas, monospace;
+    color: var(--text-1);
+  }
+}
 
 .ftk-actions {
   display: grid;

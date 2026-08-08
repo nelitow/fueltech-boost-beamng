@@ -1,52 +1,31 @@
 -- FuelTech Auto Lights Controller
--- Turns headlights on at night and off at dawn. Never fights a manual
--- toggle: only acts on state changes it caused itself.
+-- Forces low-beam headlights and fog lights on by default, every time the
+-- vehicle loads or resets. Previous versions tried to track day/night and
+-- only light up after dusk — dropped in favor of "just always on", which
+-- is what was actually being asked for and needs no GE-side polling.
 
 local M = {}
 M.type = "auxiliary"
 
-local weTurnedOn = false
-local lastKnownState = nil
-
 -- controller.loadControllerExternal unconditionally calls c.init(data);
--- without this the load pcall throws ("attempt to call field 'init'"),
+-- without an init() the load pcall throws ("attempt to call field 'init'"),
 -- the controller never registers, and the GE extension retries the
 -- attach forever — spamming 'Can't load controller' into the log for
 -- every vehicle (the v8.4.0 bug).
-local function init(jbeamData)
-  weTurnedOn = false
-  lastKnownState = nil
+local function applyDefaultLights()
+  electrics.setLightsState(1)   -- 0=off, 1=low beam, 2=high beam
+  electrics.set_fog_lights(true)
 end
 
--- Called from the GE-side fueltech extension once per day/night transition.
-local function setNight(isNight)
-  local state = electrics.values.lights_state or 0
+local function init(jbeamData)
+  applyDefaultLights()
+end
 
-  -- If the lights changed since we last looked and it wasn't us, the driver
-  -- touched them manually — stop managing this vehicle's lights until the
-  -- next transition re-syncs us.
-  if lastKnownState ~= nil and state ~= lastKnownState then
-    weTurnedOn = false
-  end
-
-  if isNight then
-    if state == 0 then
-      electrics.setLightsState(1)
-      weTurnedOn = true
-      state = 1
-    end
-  else
-    if weTurnedOn and state == 1 then
-      electrics.setLightsState(0)
-      weTurnedOn = false
-      state = 0
-    end
-  end
-
-  lastKnownState = state
+local function reset()
+  applyDefaultLights()
 end
 
 M.init = init
-M.setNight = setNight
+M.reset = reset
 
 return M

@@ -66,13 +66,6 @@
   letter-spacing: 4px;
 }
 
-.ft-hdr-boost {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--fg-2);
-  font-variant-numeric: tabular-nums;
-}
-
 .ft-hdr-sep { color: var(--fg-3); opacity: 0.6; }
 
 /* Projected peak torque/power readout — violet to mark it as "our"
@@ -91,8 +84,6 @@
   color: var(--fg-3);
   margin-right: 3px;
 }
-.ft-hdr-tgt { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-
 .ft-peak {
   font-size: 10px;
   color: var(--fg-3);
@@ -202,57 +193,6 @@
   overflow: hidden;
 }
 
-/* Speed / Gear */
-.ft-c-spd {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.ft-spd {
-  font-size: 56px;
-  font-weight: 700;
-  color: var(--fg-1);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.ft-spd-u {
-  font-size: 12px;
-  color: var(--fg-3);
-  letter-spacing: 4px;
-}
-
-.ft-gear-l {
-  font-size: 10px;
-  color: var(--fg-3);
-  letter-spacing: 2px;
-}
-
-.ft-gear-v {
-  font-size: 38px;
-  font-weight: 700;
-  color: var(--ft-ok);
-  line-height: 1;
-  text-shadow: 0 0 18px rgba(0,204,102,0.25);
-  transition: color var(--dur-1) var(--ease-out), text-shadow var(--dur-1) var(--ease-out);
-}
-
-.ft-gear-mode {
-  font-size: 9px;
-  color: var(--fg-3);
-  letter-spacing: 2px;
-  margin-top: 2px;
-  text-transform: uppercase;
-}
-
-/* Shift light — gear flash */
-.ft-shift-gear {
-  color: var(--ft-danger) !important;
-  text-shadow: 0 0 24px rgba(255,51,85,0.6) !important;
-}
-
 /* Presets bar */
 .ft-bar {
   display: flex;
@@ -289,9 +229,9 @@
   box-shadow: 0 0 12px rgba(34,204,238,0.12);
 }
 
-/* Two-line buttons (ANTI-LAG): main label on top, smaller clarifying
-   subtitle below so users know what the control does. */
-.ft-btn-als {
+/* Two-line buttons (ANTI-LAG, NITROUS): main label on top, smaller
+   clarifying subtitle below so users know what the control does. */
+.ft-btn-als, .ft-btn-n2o {
   flex-direction: column;
   justify-content: center;
   line-height: 1.1;
@@ -518,6 +458,30 @@
   animation: ft-pulse 0.3s ease-in-out infinite;
 }
 
+/* N2O button */
+.ft-btn-n2o {
+  font-weight: 800 !important;
+  letter-spacing: 1px !important;
+}
+.ft-btn-n2o-on {
+  color: var(--ft-accent-2) !important;
+  border-color: var(--ft-accent-2) !important;
+  background: hsl(250, 11%, 14%) !important;
+  box-shadow: 0 0 10px rgba(167,139,250,0.18);
+}
+.ft-btn-n2o-locked {
+  color: var(--ft-warn) !important;
+  border-color: var(--ft-warn) !important;
+  background: rgba(43,34,0,0.9) !important;
+  box-shadow: 0 0 10px rgba(255,204,0,0.15);
+}
+.ft-btn-n2o-firing {
+  color: #ffffff !important;
+  border-color: var(--ft-accent-2) !important;
+  background: rgba(167,139,250,0.25) !important;
+  box-shadow: 0 0 16px rgba(167,139,250,0.5);
+  animation: ft-pulse 0.5s ease-in-out infinite;
+}
 /* Utility */
 .ft-red { color: var(--ft-danger) !important; }
 
