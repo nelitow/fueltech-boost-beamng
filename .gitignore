@@ -1,3 +1,12 @@
+# This repo root is mods/unpacked/ so both mods can stay live-editable in place
+# for BeamNG to load directly. Only the two mods below are tracked — everything
+# else that BeamNG.drive or other mods drop in this folder is ignored.
+/*
+!/fueltech_boost_controller/
+!/sunburst2_ej_engines/
+!/.gitignore
+!/.github/
+
 # Local release zips (built by hand for the BeamNG repo upload —
-# the GitHub release workflow builds a fresh one in CI).
-dist/
+# the GitHub release workflows build a fresh one in CI).
+**/dist/

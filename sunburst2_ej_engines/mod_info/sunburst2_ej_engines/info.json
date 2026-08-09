@@ -1,0 +1,10 @@
+{
+    "title": "Sunburst2 EJ255/EJ257 Engine Tunes",
+    "tagid": "sunburst2_ej_engines",
+    "version_string": "0.3.0",
+    "tag_line": "Realistic Subaru EJ255 (WRX) and EJ257 (STI) engine builds for the Hirochi Sunburst2 — long blocks, turbos, transaxles, exhaust, intercoolers, radiator, forged internals, alcohol fuel.",
+    "username": "Nelito",
+    "message": "Sunburst2 EJ255/EJ257 Engine Tunes\n\nAdds a full realistic Subaru-spec engine/drivetrain build tree to the Hirochi Sunburst2's existing tuning system, alongside the stock options (nothing is replaced):\n\n- EJ255 Long Block (WRX) + TD04 Turbocharger — tuned toward ~230hp / ~235lb-ft (319Nm), peaking around 3600rpm like the real EJ255\n- EJ257 Long Block (STI) + TD05 Turbocharger — tuned toward ~305hp / ~290lb-ft (393Nm), with a flatter, later-pulling curve reflecting the closed-deck block and dual-AVCS heads\n- Bottom End options (nested under each Long Block): Stock, or Forged Closed-Deck at 8.0:1 (low compression, max boost headroom) or 9.5:1 (high compression, sharper response)\n- Cylinder Head options (nested under each Long Block): Single AVCS (intake) or Dual AVCS (intake+exhaust) — swappable independently of which long block you pick\n- Intercooler options (nested under each Turbo): Front-Mount (FMIC, stock-style) or Top-Mount (TMIC, quicker spool feel)\n- STI Genome Cat-Back Exhaust — alternative to the stock race pipe under the TD05, tuned less restrictive\n- Flex-Fuel Alcohol Tune (E85/Methanol) — new ECU option, adds real boost via the turbo's wastegate\n- WRX 5-Speed Manual Transaxle — real WRX 5MT ratios (3.454/1.947/1.296/0.972/0.738)\n- STI 6-Speed Manual Transaxle — real STI 6MT ratios (3.636/2.375/1.761/1.346/1.062/0.795)\n- Mishimoto Performance Radiator — higher cooling capacity than stock\n\nPick your combination from Vehicle Config > Engine/Drivetrain on the Sunburst2. Note: the base game has no intercooler slot, so the FMIC/TMIC options are functional tuning parts with no unique 3D model (same convention as the game's own ECU parts).\n\nAuthor: Nelito | License: MIT",
+    "resource_category_id": 7,
+    "category_title": "Vehicle Mods"
+}

@@ -1,10 +1,10 @@
-name: FuelTech Boost Controller Release
+name: Sunburst2 EJ Engines Release
 
 on:
   push:
     branches: [master]
     paths:
-      - 'fueltech_boost_controller/**'
+      - 'sunburst2_ej_engines/**'
 
 jobs:
   release:
@@ -17,11 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from app.html
+      - name: Get version from info.json
         id: version
         run: |
-          VER=$(grep -oP '[\d]+\.[\d]+\.[\d]+' fueltech_boost_controller/ui/modules/apps/FuelTechBoost/app.html | head -1)
-          echo "version=v$VER" >> "$GITHUB_OUTPUT"
+          VER=$(grep -oP '"version_string":\s*"\K[\d]+\.[\d]+\.[\d]+' sunburst2_ej_engines/mod_info/sunburst2_ej_engines/info.json | head -1)
+          echo "version=sunburst2-ej-v$VER" >> "$GITHUB_OUTPUT"
           echo "Found version: v$VER"
 
       - name: Check if release already exists
@@ -39,23 +39,22 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         id: changelog
         run: |
-          # Get the previous fueltech release tag, or use initial commit if none
-          PREV_TAG=$(gh release list --limit 50 --json tagName -q '[.[].tagName | select(startswith("v"))][0]' 2>/dev/null || true)
+          PREV_TAG=$(gh release list --limit 50 --json tagName -q '[.[].tagName | select(startswith("sunburst2-ej-v"))][0]' 2>/dev/null || true)
           if [ -z "$PREV_TAG" ]; then
-            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -- fueltech_boost_controller)
+            LOG=$(git log --pretty=format:"- %s (%h)" --no-merges -- sunburst2_ej_engines)
           else
-            LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges -- fueltech_boost_controller)
+            LOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges -- sunburst2_ej_engines)
           fi
 
           {
-            echo "# FuelTech Boost Controller ${{ steps.version.outputs.version }}"
+            echo "# Sunburst2 EJ255/EJ257 Engine Tunes ${{ steps.version.outputs.version }}"
             echo ""
-            echo "BeamNG.drive boost controller dashboard mod."
+            echo "Realistic Subaru EJ255 (WRX) / EJ257 (STI) engine and drivetrain builds for the Hirochi Sunburst2."
             echo ""
             echo "## Installation"
-            echo "1. Download \`fueltech_boost_controller.zip\` below"
+            echo "1. Download \`sunburst2_ej_engines.zip\` below"
             echo "2. Extract into \`%LocalAppData%\\BeamNG\\BeamNG.drive\\<version>\\mods\\unpacked\\\`"
-            echo "3. Launch BeamNG and add **FuelTech Dashboard** from UI Apps"
+            echo "3. Pick the new parts from Vehicle Config > Engine/Drivetrain on the Sunburst2"
             echo ""
             echo "## Changelog"
             echo "$LOG"
@@ -69,22 +68,18 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: |
           mkdir -p dist
-          cd fueltech_boost_controller
-          zip -r ../dist/fueltech_boost_controller.zip \
-            lua/ \
-            ui/ \
+          cd sunburst2_ej_engines
+          zip -r ../dist/sunburst2_ej_engines.zip \
             vehicles/ \
             mod_info/ \
-            scripts/modScript.lua \
-            README.md \
             -x "*.git*"
 
       - name: Create release
         if: steps.check.outputs.exists == 'false'
         run: |
           gh release create "${{ steps.version.outputs.version }}" \
-            dist/fueltech_boost_controller.zip \
-            --title "FuelTech Boost Controller ${{ steps.version.outputs.version }}" \
+            dist/sunburst2_ej_engines.zip \
+            --title "Sunburst2 EJ Engines ${{ steps.version.outputs.version }}" \
             --notes-file release_notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

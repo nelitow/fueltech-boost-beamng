@@ -1,0 +1,1073 @@
+// Sunburst2 EJ255/EJ257 Engine Tunes — Phase 1
+//
+// Adds two realistic Subaru-spec long-block + turbo pairs to the Sunburst2's existing
+// "2.5L F4 Engine" tuning tree (sunburst2_engine_2_5.jbeam, base game content — not edited).
+// These are ADDITIONAL options in the same slots as the game's own Stock/Stage 1/Stage 2
+// parts, authored with the same delta pattern ($* multiply, $+ add, torqueModMult reshapes
+// the base NA torque curve, components.exhaustPowerAdd is a shared value the turbo's
+// maxExhaustPower formula reads).
+//
+// Target numbers (widely-cited SAE net crank figures, used as tuning targets):
+//   EJ255 (WRX): ~230 hp @ 5600rpm, ~235 lb-ft (319 Nm) @ 3600rpm, TD04, ~14.2 psi
+//   EJ257 (STI): ~305 hp @ 6000rpm, ~290 lb-ft (393 Nm) @ 4000rpm, TD05, ~14.5-14.7 psi
+//
+// The turbo's wastegate target is normally read from a $wastegateTarget variable supplied
+// by whichever ECU part is installed (see sunburst2_engine_2_5.jbeam). To keep these two
+// turbos self-contained regardless of ECU choice, wastegateStart/wastegateLimit are set
+// directly here instead of depending on $wastegateTarget.
+{
+
+"sunburst2_engine_2_5_internals_ej255": {
+    "information":{
+        "authors":"Nelito",
+        "name":"EJ255 Long Block (WRX)",
+        "value":5200,
+    },
+    "slotType" : "sunburst2_engine_2_5_internals",
+    "slots2": [
+        ["name","allowTypes","denyTypes","default","description"],
+        ["sunburst2_ej_bottomend", ["sunburst2_ej_bottomend"], [], "sunburst2_ej_bottomend_stock", "Bottom End"],
+        ["sunburst2_ej_heads", ["sunburst2_ej_heads"], [], "sunburst2_ej_heads_single_avcs", "Cylinder Heads"],
+    ],
+    "mainEngine":{
+        // Real EJ255 peak torque lands around 3600rpm, notably earlier than this engine's
+        // stock NA curve (peaks 4500rpm) — this reshapes the base curve toward that, with a
+        // mild taper past 6000 reflecting the WRX's shorter-duration cam profile vs the STI.
+        // Solved against the verified getTorqueData model (torque = (base*mult + exhaustMod)*turboCoef
+        // - friction - dynamicFriction*rpm*pi/30; power reported in mechanical HP). Assumes the TD04's
+        // default stock turbo exhaust (torqueModExhaust -4.9Nm@4000) and 5.0 psi coef midpoint.
+        // Targets: 319 Nm @ ~3600, 230 hp @ ~5600.
+        "torqueModMult":[
+        ["rpm", "torque"],
+        [0,       1.00],
+        [500,     1.00],
+        [1000,    1.00],
+        [1500,    1.02],
+        [2000,    1.05],
+        [2500,    1.07],
+        [3000,    1.082],
+        [3500,    1.0715],
+        [4000,    1.0542],
+        [4500,    1.0410],
+        [5000,    1.0398],
+        [5500,    1.0574],
+        [6000,    1.0064],
+        [6500,    0.9740],
+        [7000,    0.95],
+        [7500,    0.92],
+        [8000,    0.89],
+        [8500,    0.86],
+        [9000,    0.83],
+        [9500,    0.80],
+        [10000,   0.78]
+    ]
+        // Real WRX soft-limits around 6700rpm.
+        "$+maxRPM":-300,
+        "$+maxPhysicalRPM":-300,
+        "$*friction":1.10,
+        "$*dynamicFriction":1.10,
+        "$*inertia":1.08,
+        "$*engineBrakeTorque":1.0,
+        // Semi-closed-deck block — stock-boost-safe headroom, not a high-boost block.
+        "$*maxTorqueRating": 1.5,
+        "$*maxOverTorqueDamage": 1.3,
+    },
+    "components": {
+        "exhaustPowerAdd": {
+          "exhaustPowerAdd":0
+        },
+    },
+},
+
+"sunburst2_engine_2_5_internals_ej257": {
+    "information":{
+        "authors":"Nelito",
+        "name":"EJ257 Long Block (STI)",
+        "value":6800,
+    },
+    "slotType" : "sunburst2_engine_2_5_internals",
+    "slots2": [
+        ["name","allowTypes","denyTypes","default","description"],
+        ["sunburst2_ej_bottomend", ["sunburst2_ej_bottomend"], [], "sunburst2_ej_bottomend_stock", "Bottom End"],
+        ["sunburst2_ej_heads", ["sunburst2_ej_heads"], [], "sunburst2_ej_heads_dual_avcs", "Cylinder Heads"],
+    ],
+    "mainEngine":{
+        // Flatter and sustained further into the rev range than the EJ255 — dual AVCS
+        // (intake + exhaust, vs WRX's intake-only) broadens the powerband; peak torque
+        // still lands early (~4000rpm) but the STI keeps pulling hard well past 6000rpm.
+        // Solved against the verified getTorqueData model (torque = (base*mult + exhaustMod)*turboCoef
+        // - friction - dynamicFriction*rpm*pi/30; power reported in mechanical HP). Assumes the TD05's
+        // race turbo exhaust (torqueModExhaust -1.4Nm@4000) and 7.0 psi coef midpoint.
+        // Targets: 393 Nm @ ~4000, 305 hp @ ~6000.
+        "torqueModMult":[
+        ["rpm", "torque"],
+        [0,       1.00],
+        [500,     1.00],
+        [1000,    1.00],
+        [1500,    1.02],
+        [2000,    1.06],
+        [2500,    1.09],
+        [3000,    1.104],
+        [3500,    1.1668],
+        [4000,    1.1680],
+        [4500,    1.1577],
+        [5000,    1.1617],
+        [5500,    1.1741],
+        [6000,    1.1839],
+        [6500,    1.1416],
+        [7000,    1.0955],
+        [7500,    1.05],
+        [8000,    1.00],
+        [8500,    0.95],
+        [9000,    0.90],
+        [9500,    0.85],
+        [10000,   0.80]
+    ]
+        "$*friction":1.05,
+        "$*dynamicFriction":1.08,
+        "$*inertia":1.12,
+        "$*engineBrakeTorque":1.1,
+        // Closed-deck block — genuinely more boost-tolerant stock than the EJ255.
+        "cylinderWallTemperatureDamageThreshold":145,
+        "engineBlockTemperatureDamageThreshold":130,
+        "$*maxTorqueRating": 1.9,
+        "$*maxOverTorqueDamage": 1.5,
+    },
+    "components": {
+        "exhaustPowerAdd": {
+          "exhaustPowerAdd":40
+        },
+    },
+},
+
+"sunburst2_engine_2_5_intake_td04": {
+    "information":{
+        "authors":"Nelito",
+        "name":"TD04 Turbocharger (WRX)",
+        "value":6500,
+    },
+    "slotType" : "sunburst2_engine_2_5_intake",
+    "slots2": [
+        ["name","allowTypes","denyTypes","default","description"],
+        ["sunburst2_exhaust_turbo_stock", ["sunburst2_exhaust_turbo_stock"], [], "sunburst2_exhaust_turbo_stock", "Exhaust"],
+        ["sunburst2_ej_intercooler", ["sunburst2_ej_intercooler"], [], "sunburst2_ej_intercooler_fmic", "Intercooler"],
+    ],
+    "components": {
+        "exhaustPowerAdd": {
+        },
+    },
+    "turbocharger": {
+        "bovSoundFileName":"event:>Vehicle>Forced_Induction>Turbo_01>turbo_bov",
+        "hissLoopEvent":"event:>Vehicle>Forced_Induction>Turbo_03>turbo_hiss",
+        "whineLoopEvent":"event:>Vehicle>Forced_Induction>Turbo_02>turbo_spin",
+        // Small, quick-spooling — real TD04 character, only a little bigger than this
+        // engine's own stock turbo (0.65).
+        "turboSizeCoef": 0.72,
+        "bovSoundVolumeCoef": 0.7,
+        "hissVolumePerPSI": 0.035,
+        "whineVolumePer10kRPM": 0.028,
+        "whinePitchPer10kRPM": 0.075,
+        // Live-verified against this engine's own coef model (K_PSI~0.05998, this
+        // curve's own efficiency table) to land near the EJ255 target (~319Nm@3600rpm,
+        // ~230hp@5600rpm) — NOT a literal transcription of the real turbo's PSI rating.
+        // This engine's base NA curve already sits close to WRX-like output once even
+        // modest boost is applied, so real-world PSI figures overshoot badly here.
+        "wastegateStart": 4.5,
+        "wastegateLimit": 5.5,
+        "maxExhaustPower": "$=$components.exhaustPowerAdd.exhaustPowerAdd == nil and 600 or $components.exhaustPowerAdd.exhaustPowerAdd+600",
+        "backPressureCoef": 0.0000022,
+        "pressureRatePSI": 50,
+        "frictionCoef": 20,
+        "inertia":0.32,
+        "damageThresholdTemperature": 680,
+        "pressurePSI":[
+            //turbineRPM, pressure(PSI)
+            [0,       -2.5],
+            [10000,   -1.0],
+            [30000,     6],
+            [60000,    12],
+            [90000,    19],
+            [150000,   24],
+            [200000,   28],
+            [250000,   32],
+        ],
+        "engineDef":[
+            //engineRPM, efficiency, exhaustFactor — good low-end (real TD04 trait), flow
+            //ceiling reached earlier than a bigger turbo (tapers from ~6000rpm).
+            [0,     0.00,    0.00],
+            [650,   0.22,    0.16],
+            [1400,  0.55,    0.48],
+            [2000,  0.83,    0.70],
+            [2500,  0.90,    0.82],
+            [3000,  0.94,    0.96],
+            [4000,  0.97,    1.00],
+            [5000,  0.97,    1.00],
+            [6000,  0.94,    0.98],
+            [7000,  0.88,    0.94],
+            [8000,  0.80,    0.92],
+            [9000,  0.68,    0.90],
+            [10000, 0.60,    0.85],
+            [11000, 0.50,    0.85],
+        ],
+    },
+    "mainEngine":{
+        "turbocharger":"turbocharger",
+        "$*instantAfterFireCoef": 1.2,
+        "$*sustainedAfterFireCoef": 1.2,
+        "deformGroups_turbo":["mainEngine_turbo","mainEngine_intercooler","mainEngine_piping"]
+    },
+    "soundConfig": {
+        "$+intakeMuffling":-0.1,
+        "$+mainGain":0.4,
+        "$+maxLoadMix": 0.15,
+        "$+offLoadGain":-0.02,
+    },
+    "soundConfigExhaust": {
+        "$+maxLoadMix": 0.15,
+        "$+mainGain": -0.8,
+        "$+offLoadGain": -0.02,
+    },
+},
+
+"sunburst2_engine_2_5_intake_td05": {
+    "information":{
+        "authors":"Nelito",
+        "name":"TD05 Turbocharger (STI)",
+        "value":9500,
+    },
+    "slotType" : "sunburst2_engine_2_5_intake",
+    "slots2": [
+        ["name","allowTypes","denyTypes","default","description"],
+        ["sunburst2_exhaust_turbo_race", ["sunburst2_exhaust_turbo_race"], [], "sunburst2_exhaust_turbo_race", "Exhaust"],
+        ["sunburst2_ej_intercooler", ["sunburst2_ej_intercooler"], [], "sunburst2_ej_intercooler_fmic", "Intercooler"],
+    ],
+    "components": {
+        "exhaustPowerAdd": {
+        },
+    },
+    "turbocharger": {
+        "bovSoundFileName":"event:>Vehicle>Forced_Induction>Turbo_05>turbo_bov_tuned",
+        "hissLoopEvent":"event:>Vehicle>Forced_Induction>Turbo_03>turbo_hiss",
+        "whineLoopEvent":"event:>Vehicle>Forced_Induction>Turbo_02>turbo_spin",
+        // Bigger than this engine's own Stage 1 (0.8) — real TD05 is a noticeably bigger
+        // compressor than a TD04, trading a little low-end response for real top-end.
+        "turboSizeCoef": 0.95,
+        "bovSoundVolumeCoef": 0.78,
+        "hissVolumePerPSI": 0.037,
+        "whineVolumePer10kRPM": 0.03,
+        "whinePitchPer10kRPM": 0.07,
+        // Live-verified against this engine's own coef model to land near the EJ257
+        // target (~393Nm@4000rpm, ~305hp@6000rpm) — see the TD04's note above on why
+        // this isn't a literal real-world PSI figure.
+        "wastegateStart": 6.5,
+        "wastegateLimit": 7.5,
+        "maxExhaustPower": "$=$components.exhaustPowerAdd.exhaustPowerAdd == nil and 750 or $components.exhaustPowerAdd.exhaustPowerAdd+750",
+        "backPressureCoef": 0.0000027,
+        "pressureRatePSI": 50,
+        "frictionCoef": 24,
+        "inertia":0.45,
+        "damageThresholdTemperature": 740,
+        "pressurePSI":[
+            //turbineRPM, pressure(PSI)
+            [0,       -2.5],
+            [10000,   -1.2],
+            [30000,     8],
+            [60000,    17],
+            [90000,    22],
+            [150000,   28],
+            [200000,   33],
+            [250000,   40],
+        ],
+        "engineDef":[
+            //engineRPM, efficiency, exhaustFactor — more lag than the TD04 at low rpm
+            //(bigger wheel), but sustains high efficiency much further into the rev range.
+            [0,     0.00,    0.00],
+            [650,   0.08,    0.14],
+            [1400,  0.35,    0.40],
+            [2000,  0.60,    0.68],
+            [2500,  0.83,    0.75],
+            [3000,  0.90,    0.88],
+            [3500,  0.93,    0.95],
+            [4000,  0.96,    1.00],
+            [5000,  0.97,    1.00],
+            [6000,  0.97,    1.00],
+            [7000,  0.95,    1.00],
+            [8000,  0.90,    0.98],
+            [9000,  0.86,    0.94],
+            [10000, 0.80,    0.90],
+            [11000, 0.70,    0.90],
+        ],
+    },
+    "mainEngine":{
+        "turbocharger":"turbocharger",
+        "$*instantAfterFireCoef": 1.3,
+        "$*sustainedAfterFireCoef": 1.3,
+        "deformGroups_turbo":["mainEngine_turbo","mainEngine_intercooler","mainEngine_piping"]
+    },
+    "soundConfig": {
+        "$+intakeMuffling":-0.12,
+        "$+mainGain":0.55,
+        "$+maxLoadMix": 0.22,
+        "$+offLoadGain":-0.035,
+        "$+highShelfGain": -1.0,
+    },
+    "soundConfigExhaust": {
+        "$+maxLoadMix": 0.22,
+        "$+mainGain": -1.1,
+        "$+offLoadGain": -0.035,
+    },
+},
+
+// STI 6-Speed Manual Transaxle — Phase 2, item 1. Real close-ratio STI 6MT gearset
+// (1st-6th + reverse), same slot as the game's own 5-speed/CVT/DCT/6-speed-sequential
+// options (sunburst2_transaxle), reusing the existing flywheel/transfer-case/front-diff
+// child slots exactly like sunburst2_transaxle_5M does. Fixed real ratios rather than
+// the 5M's per-gear-swappable-slot pattern, since this represents one specific real
+// gearset rather than a build-your-own-ratios option.
+"sunburst2_transaxle_6M_sti": {
+    "information":{
+        "authors":"Nelito",
+        "name":"STI 6-Speed Manual Transaxle",
+        "value":4600,
+    },
+    "slotType" : "sunburst2_transaxle",
+    "slots2": [
+        ["name",                     "allowTypes",                 "denyTypes", "default",                     "description"],
+        ["sunburst2_flywheel",       ["sunburst2_flywheel"],       [],          "sunburst2_flywheel",          "Flywheel",           {"coreSlot":true}],
+        ["sunburst2_transfer_case",  ["sunburst2_transfer_case"],  [],          "sunburst2_transfer_case_AWD", "Transfer Case"],
+        ["sunburst2_differential_F", ["sunburst2_differential_F"], [],          "sunburst2_differential_F",    "Front Differential"],
+    ],
+    "powertrain": [
+        ["type", "name", "inputName", "inputIndex"],
+        ["frictionClutch", "clutch", "mainEngine", 1],
+        ["manualGearbox", "gearbox", "clutch", 1],
+    ],
+    "vehicleController": {
+        "calculateOptimalLoadShiftPoints": true,
+        "shiftDownRPMOffsetCoef":1.20,
+        "lowShiftDownRPM":[0,0,0,1400,1500,1500,1450,1450,1450],
+        "lowShiftUpRPM":[0,0,3500,3200,2900,2700,2600,2600],
+        "clutchLaunchStartRPM": 2500,
+        "clutchLaunchTargetRPM": 3200,
+    },
+    "gearbox": {
+        "uiName":"Gearbox",
+        // Real STI 6MT ratios (widely-cited): 3.636 / 2.375 / 1.761 / 1.346 / 1.062 / 0.795,
+        // reverse 3.545 (same reverse as the 5-speed).
+        "gearRatios":[-3.545, 0, 3.636, 2.375, 1.761, 1.346, 1.062, 0.795],
+        "friction": 1.22,
+        "dynamicFriction": 0.00115,
+        "torqueLossCoef": 0.0158,
+        "gearboxNode:":["tra1"],
+
+        "gearWhineCoefsInput":  [0.60, 0.00, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12],
+        "gearWhineCoefsOutput": [0.00, 0.00, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24],
+        "gearWhineInputEvent": "event:>Vehicle>Transmission>helical_01>twine_in",
+        "gearWhineOutputEvent": "event:>Vehicle>Transmission>helical_01>twine_out",
+    },
+    "flexbodies": [
+         ["mesh", "[group]:", "nonFlexMaterials"],
+         ["sunburst2_transmission", ["sunburst2_engine","sunburst2_transaxle"]],
+    ],
+    "nodes": [
+         ["id",   "posX", "posY", "posZ"],
+         {"frictionCoef":0.5},
+         {"nodeMaterial":"|NM_METAL"},
+         {"selfCollision":false},
+         {"collision":true},
+         {"group":"sunburst2_transaxle"},
+         {"nodeWeight":24},
+         ["tra1", 0.000, -0.750,  0.335],
+         {"group":""},
+    ],
+    "beams":[
+        ["id1:", "id2:"],
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+        {"beamSpring":15001000,"beamDamp":500},
+        {"beamDeform":175000,"beamStrength":"FLT_MAX"},
+        ["tra1", "e2r"],
+        ["tra1", "e4r"],
+        ["tra1", "e2l"],
+        ["tra1", "e4l"],
+        ["tra1", "e1r"],
+        ["tra1", "e3r"],
+        ["tra1", "e1l"],
+        ["tra1", "e3l"],
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+    ],
+},
+
+// WRX 5-Speed Manual Transaxle — Phase 2, item 2. The game's own stock 5M
+// (sunburst2_transaxle_5M) already uses ratios extremely close to the real WRX 5MT
+// (3.45/1.947/1.296/0.972/0.738 vs real 3.454/1.947/1.296/0.972/0.738 — within rounding).
+// This part exists so "WRX 5-speed" shows up as its own clearly-labeled real-spec choice
+// rather than relying on a generically-named stock part, using the exact real ratios and
+// the same fixed-ratio pattern as the STI 6M part above.
+"sunburst2_transaxle_5M_wrx": {
+    "information":{
+        "authors":"Nelito",
+        "name":"WRX 5-Speed Manual Transaxle",
+        "value":3200,
+    },
+    "slotType" : "sunburst2_transaxle",
+    "slots2": [
+        ["name",                     "allowTypes",                 "denyTypes", "default",                     "description"],
+        ["sunburst2_flywheel",       ["sunburst2_flywheel"],       [],          "sunburst2_flywheel",          "Flywheel",           {"coreSlot":true}],
+        ["sunburst2_transfer_case",  ["sunburst2_transfer_case"],  [],          "sunburst2_transfer_case_AWD", "Transfer Case"],
+        ["sunburst2_differential_F", ["sunburst2_differential_F"], [],          "sunburst2_differential_F",    "Front Differential"],
+    ],
+    "powertrain": [
+        ["type", "name", "inputName", "inputIndex"],
+        ["frictionClutch", "clutch", "mainEngine", 1],
+        ["manualGearbox", "gearbox", "clutch", 1],
+    ],
+    "vehicleController": {
+        "calculateOptimalLoadShiftPoints": true,
+        "shiftDownRPMOffsetCoef":1.22,
+        "lowShiftDownRPM":[0,0,0,1400,1600,1500,1500,1500],
+        "lowShiftUpRPM":[0,0,3400,3000,2700,2700,2700],
+        "clutchLaunchStartRPM": 2500,
+        "clutchLaunchTargetRPM": 3000,
+    },
+    "gearbox": {
+        "uiName":"Gearbox",
+        // Real WRX 5MT ratios (widely-cited): 3.454 / 1.947 / 1.296 / 0.972 / 0.738,
+        // reverse 3.454.
+        "gearRatios":[-3.454, 0, 3.454, 1.947, 1.296, 0.972, 0.738],
+        "friction": 1.19,
+        "dynamicFriction": 0.0011,
+        "torqueLossCoef": 0.0155,
+        "gearboxNode:":["tra1"],
+
+        "gearWhineCoefsInput":  [0.60, 0.00, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12],
+        "gearWhineCoefsOutput": [0.00, 0.00, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24, 0.24],
+        "gearWhineInputEvent": "event:>Vehicle>Transmission>helical_01>twine_in",
+        "gearWhineOutputEvent": "event:>Vehicle>Transmission>helical_01>twine_out",
+    },
+    "flexbodies": [
+         ["mesh", "[group]:", "nonFlexMaterials"],
+         ["sunburst2_transmission", ["sunburst2_engine","sunburst2_transaxle"]],
+    ],
+    "nodes": [
+         ["id",   "posX", "posY", "posZ"],
+         {"frictionCoef":0.5},
+         {"nodeMaterial":"|NM_METAL"},
+         {"selfCollision":false},
+         {"collision":true},
+         {"group":"sunburst2_transaxle"},
+         {"nodeWeight":22},
+         ["tra1", 0.000, -0.750,  0.335],
+         {"group":""},
+    ],
+    "beams":[
+        ["id1:", "id2:"],
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+        {"beamSpring":15001000,"beamDamp":500},
+        {"beamDeform":175000,"beamStrength":"FLT_MAX"},
+        ["tra1", "e2r"],
+        ["tra1", "e4r"],
+        ["tra1", "e2l"],
+        ["tra1", "e4l"],
+        ["tra1", "e1r"],
+        ["tra1", "e3r"],
+        ["tra1", "e1l"],
+        ["tra1", "e3l"],
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+    ],
+},
+
+// Mishimoto-style Performance Radiator — Phase 2, item 3. Real Mishimoto aluminum radiators
+// for WRX/STI are known for a much larger core than OEM while keeping the stock thermostat
+// temp (unlike a race radiator's lower thermostat setting) since they're a daily-driving
+// upgrade, not a track-only part. Reuses the existing race-radiator visual mesh (no new mesh
+// assets available), but with the base game's own radiator/race/ultra tiers as the guide for
+// distinct cooling numbers: effectiveness set above race (9000) but well below the fully
+// track-only ultra tier (18000, which also drops the thermostat to 85C), matching a
+// higher-flow street/spirited-driving core rather than a race-only setup.
+"sunburst2_radiator_mishimoto": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Mishimoto Performance Radiator",
+        "value":620,
+    },
+    "slotType" : "sunburst2_radiator",
+    "flexbodies": [
+         ["mesh", "[group]:", "nonFlexMaterials"],
+         ["sunburst2_radiator_race", ["sunburst2_radiator"]],
+         {"deformGroup":"radhose_damage", "deformMaterialBase":"generic_perf_parts", "deformMaterialDamaged":"invis"},
+         ["sunburst2_radiator_race_pipes", ["sunburst2_engine","sunburst2_radiator"]],
+         {"deformGroup":"", "deformationTriggerRatio":""},
+    ],
+    "props": [
+        ["func", "mesh", "idRef:", "idX:", "idY:", "baseRotation", "rotation", "translation", "min", "max", "offset", "multiplier"],
+        ["radiatorFanSpin", "sunburst2_radiator_race_fan_R", "rad1","f15r","rad2", {"x":0, "y":0, "z":18}, {"x":0, "y":-1, "z":0}, {"x":0, "y":0, "z":0}, -360, 360, 0, 1],
+        ["radiatorFanSpin", "sunburst2_radiator_race_fan_L", "rad1","f15l","rad2", {"x":0, "y":0, "z":162}, {"x":0, "y":-1, "z":0}, {"x":0, "y":0, "z":0}, -360, 360, 0, 1],
+    ],
+    "mainEngine":{
+        "radiatorArea":0.34,
+        "radiatorEffectiveness":12500,
+        "coolantVolume":9,
+        "radiatorFanType":"electric",
+        "radiatorFanTemperature":98,
+        "radiatorFanMaxAirSpeed":3,
+        "thermostatTemperature":90,
+        "radiatorFanLoopEvent": "event:>Vehicle>Cooling Fan>Electric_05",
+        "radiatorFanVolume": 0.65,
+
+        //damage deformGroups
+        "deformGroups_radiator":["radiator_damage", "radhose_damage"],
+    },
+    "nodes": [
+        ["id",   "posX", "posY", "posZ"],
+        //Radiator
+        {"frictionCoef":0.5},
+        {"nodeMaterial":"|NM_METAL"},
+        {"selfCollision":false},
+        {"collision":true},
+        {"group":"sunburst2_radiator"},
+        {"nodeWeight":2.7},
+        {"engineGroup":"radiator"},
+        {"chemEnergy":200,"burnRate":0.4,"flashPoint":250,"specHeat":0.8,"smokePoint":150,"selfIgnitionCoef":false},
+        ["rad1", 0.000, -1.79,  0.640],
+        {"chemEnergy":false,"burnRate":false,"flashPoint":false,"specHeat":false,"smokePoint":false,"selfIgnitionCoef":false},
+        ["rad2", 0.000, -1.79,  0.300],
+        {"engineGroup":""},
+        {"group":""},
+    ],
+    "beams": [
+        ["id1:",  "id2:"],
+        {"beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+        {"beamSpring":701000,"beamDamp":70},
+        {"beamDeform":7500,"beamStrength":"FLT_MAX"},
+        {"deformGroup":"radiator_damage","deformationTriggerRatio":0.05},
+        //radiator
+        {"deformLimitExpansion":1.1},
+        ["rad2",  "rad1"],
+        ["rad1",  "f15"],
+        ["rad1",  "f15r"],
+        ["rad1",  "f13rr"],
+        ["rad1",  "f11rr"],
+        ["rad1",  "f15l"],
+        ["rad1",  "f13ll"],
+        ["rad1",  "f11ll"],
+        ["rad2",  "f18"],
+        ["rad2",  "f18r"],
+        ["rad2",  "f11rr"],
+        ["rad2",  "f13rr"],
+        ["rad2",  "f18l"],
+        ["rad2",  "f11ll"],
+        ["rad2",  "f13ll"],
+        {"deformLimitExpansion":""},
+
+        //radiator hoses
+        {"beamSpring":15000,"beamDamp":300},
+        {"beamDeform":1450,"beamStrength":3600},
+        {"deformGroup":"radhose_damage","deformationTriggerRatio":0.02},
+        {"optional":true},
+        ["e4r",   "f15r"],
+        ["f11rr", "e2r"],
+        ["e2r",   "f15r"],
+        ["e4r",   "f11rr"],
+        ["e3r",   "f15l"],
+        ["e1r",   "f11ll"],
+        ["e3r",   "f11ll"],
+        ["f15l",  "e1r"],
+        {"optional":false},
+        {"deformGroup":"", "deformationTriggerRatio":""},
+
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1.0, "beamShortBound":1.0},
+    ],
+},
+
+// Bottom End / forged internals + compression ratio — Phase 2, item 4. Nested under BOTH
+// EJ255 and EJ257 long blocks (see their "slots2" above). Deliberately does NOT touch
+// torqueModMult — that curve is already dyno-verified against the real EJ255/EJ257 targets
+// on each block, and a second part redeclaring the same "torqueModMult" key would silently
+// REPLACE it rather than stack (jbeam merge is last-part-wins on non-$ fields). Every field
+// below is a $*/$+ delta instead, which merges safely on top of whatever the parent block set.
+// "Stock" is a true no-op so existing saves default here with zero behavior change.
+"sunburst2_ej_bottomend_stock": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Stock Bottom End",
+        "value":0,
+    },
+    "slotType" : "sunburst2_ej_bottomend",
+},
+"sunburst2_ej_bottomend_forged_lowcomp": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Forged Closed-Deck Bottom End (8.0:1 Low Compression)",
+        "value":2400,
+    },
+    "slotType" : "sunburst2_ej_bottomend",
+    "mainEngine":{
+        // Low static compression trades a little low-boost/NA-like response for a much
+        // higher safe ceiling once real boost comes in — the classic "built for big turbo"
+        // internals choice. Forged rotating assembly adds a little rotating mass/drag.
+        "$*maxTorqueRating": 1.15,
+        "$*maxOverTorqueDamage": 1.25,
+        "$+cylinderWallTemperatureDamageThreshold": 15,
+        "$+engineBlockTemperatureDamageThreshold": 12,
+        "$*friction": 1.03,
+        "$*engineBrakeTorque": 0.95,
+    },
+},
+"sunburst2_ej_bottomend_forged_highcomp": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Forged Closed-Deck Bottom End (9.5:1 High Compression)",
+        "value":2400,
+    },
+    "slotType" : "sunburst2_ej_bottomend",
+    "mainEngine":{
+        // Higher static compression sharpens response and stock-boost efficiency, still
+        // forged/closed-deck for reliability, but less over-boost headroom than the
+        // low-compression build since it's closer to its knock limit at high boost.
+        "$*maxTorqueRating": 1.08,
+        "$*maxOverTorqueDamage": 1.15,
+        "$+cylinderWallTemperatureDamageThreshold": 8,
+        "$+engineBlockTemperatureDamageThreshold": 6,
+        "$*friction": 1.02,
+        "$*engineBrakeTorque": 1.05,
+    },
+},
+
+// AVCS Cylinder Heads — Phase 2, item 5. Nested under both long blocks. The actual breathing
+// character difference between single (WRX) and dual (STI) AVCS is already baked into each
+// block's own torqueModMult curve shape (that's the block's core identity) — this sub-slot
+// exists so the choice is explicit and swappable (e.g. a dual-AVCS head swap onto an EJ255),
+// using only safe $ deltas for the same reason as the bottom-end parts above.
+"sunburst2_ej_heads_single_avcs": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Single AVCS Heads (Intake)",
+        "value":0,
+    },
+    "slotType" : "sunburst2_ej_heads",
+},
+"sunburst2_ej_heads_dual_avcs": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Dual AVCS Heads (Intake + Exhaust)",
+        "value":1800,
+    },
+    "slotType" : "sunburst2_ej_heads",
+    "mainEngine":{
+        // Exhaust-side cam control lets the engine breathe cleanly a little further into
+        // the rev range and marginally reduces pumping losses.
+        "$+maxRPM": 100,
+        "$+maxPhysicalRPM": 100,
+        "$*dynamicFriction": 0.98,
+    },
+},
+
+// Front-Mount / Top-Mount Intercooler — Phase 2, item 6. Nested under both TD04 and TD05
+// turbos. No dedicated intercooler mesh exists for this vehicle (it has no intercooler slot
+// at all in the base game), so — per go-ahead to reuse in-game assets rather than fabricate
+// geometry — these are functional-only parts with no unique 3D model, the same convention
+// the base game already uses for its own ECU tune parts. Effects target "mainEngine"'s
+// thermal-damage-threshold fields (confirmed present on the base engine) rather than
+// turbocharger-specific fields, to avoid guessing at an internal key name and risking a
+// silent no-op.
+"sunburst2_ej_intercooler_fmic": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Front-Mount Intercooler (FMIC)",
+        "value":900,
+    },
+    "slotType" : "sunburst2_ej_intercooler",
+    "mainEngine":{
+        // Larger frontal core in clean airflow — best sustained charge cooling on long
+        // high-load pulls. Real WRX/STI both run FMIC stock, so this is also the default.
+        "$+cylinderWallTemperatureDamageThreshold": 8,
+        "$+engineBlockTemperatureDamageThreshold": 6,
+    },
+},
+"sunburst2_ej_intercooler_tmic": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Top-Mount Intercooler (TMIC)",
+        "value":750,
+    },
+    "slotType" : "sunburst2_ej_intercooler",
+    "mainEngine":{
+        // Shorter charge piping than an FMIC (quicker spool feel, approximated here as
+        // marginally less parasitic drag), but sits over the hot engine bay so it has less
+        // sustained-heat margin than a proper front-mount core.
+        "$+cylinderWallTemperatureDamageThreshold": 3,
+        "$+engineBlockTemperatureDamageThreshold": 2,
+        "$*dynamicFriction": 0.995,
+    },
+},
+
+// Flex-Fuel Alcohol Tune (E85/Methanol) — Phase 2, item 7. New option in the existing
+// sunburst2_engine_2_5_ecu slot, alongside the base game's own Stock/Sport/Stage1/Stage2/
+// Adjustable Race ECU parts. Adds boost via $+wastegateStart/$+wastegateLimit deltas rather
+// than touching torqueModMult — these operate on whatever wastegate value is already merged
+// in, so they add correctly on top of the TD04/TD05's own literal (non-$wastegateTarget)
+// PSI values. This is also how "stage tunes" already work on these turbos: any ECU part
+// using $+wastegate* deltas (including the base game's own Stage1/Stage2) stacks safely
+// regardless of which turbo is installed. Represents the real-world benefit of alcohol
+// fuel's higher octane and charge-cooling effect allowing more aggressive boost/timing
+// without immediately risking knock — not a literal fuel-chemistry simulation.
+"sunburst2_engine_2_5_ecu_alcohol": {
+    "information":{
+        "authors":"Nelito",
+        "name":"Flex-Fuel Alcohol Tune (E85/Methanol)",
+        "value":1600,
+    },
+    "slotType" : "sunburst2_engine_2_5_ecu",
+    // The turbo device is registered under a top-level "turbocharger" key (see
+    // "mainEngine":{"turbocharger":"turbocharger"} in the TD04/TD05 parts) — deltas have to
+    // target that same key to merge onto the turbo's own data, not "mainEngine".
+    "turbocharger":{
+        "$+wastegateStart": 1.5,
+        "$+wastegateLimit": 1.5,
+    },
+    "mainEngine":{
+        "$*maxOverTorqueDamage": 1.1,
+    },
+},
+
+// STI Genome Cat-Back Exhaust — Phase 2, item 8. Per go-ahead to reuse an in-game exhaust
+// model rather than fabricate new geometry: this duplicates the base game's own
+// sunburst2_exhaust_turbo_race part's full node/beam/mesh structure verbatim (same physical
+// mounting points, same visual model) as a second option in that same slot, re-tuned to a
+// less restrictive torqueModExhaust curve and a deeper/louder sound profile reflecting a
+// genuine STI Genome cat-back's known flow improvement over the stock race pipe.
+"sunburst2_exhaust_sti_genome":{
+    "information":{
+        "authors":"Nelito",
+        "name":"STI Genome Cat-Back Exhaust",
+        "value":1400,
+    },
+    "slotType" : "sunburst2_exhaust_turbo_race",
+    "flexbodies":[
+        ["mesh", "[group]:","nonFlexMaterials"],
+        ["sunburst2_exhaust_race_b", ["sunburst2_exhaust"]],
+        ["sunburst2_exhaust_race_turbo_a", ["sunburst2_exhaust"]],
+        ["sunburst2_heatshield", ["sunburst2_body"]],
+    ],
+    "mainEngine":{
+        "torqueModExhaust":[
+            ["rpm", "torque"],
+            [0, 0],
+            [1000, 0.2],
+            [2000, 0],
+            [3000, -0.3],
+            [4000, -0.5],
+            [5000, -0.9],
+            [6000, -1.4],
+            [7000, -1.8],
+            [8000, -2.8],
+            [9000, -3.8],
+        ],
+    },
+    "soundConfigExhaust": {
+        "$+lowShelfGain":10,
+        "$+highShelfGain":-6,
+        "$+eqLowGain": -4,
+        "$+eqHighGain": 3,
+        "$+eqFundamentalGain":7,
+    },
+    "nodes":[
+         ["id", "posX", "posY", "posZ"],
+         {"selfCollision":true},
+         {"collision":true},
+         {"frictionCoef":0.5},
+         {"nodeMaterial":"|NM_METAL"},
+         {"nodeWeight":0.4},
+         {"group":["sunburst2_skid_exhaust_col", "sunburst2_exhaust"]},
+         ["ex1", -0.331, -1.450,  0.267],
+
+         ["ex2r",-0.263, -0.946,  0.159],
+         ["ex2l",-0.093, -1.065,  0.159],
+
+         ["ex3r",-0.045, -0.337,  0.159, {"selfCollision":false}],
+         ["ex3l", 0.120, -0.385,  0.162, {"selfCollision":false}],
+
+         ["ex4r", -0.0187,  0.6048,  0.1591],
+         ["ex4l",  0.1467,  0.5565,  0.1624],
+
+         ["ex5r",  0.0608,  1.3992,  0.1591],
+         ["ex5l",  0.2191,  1.3314,  0.1624],
+
+         ["ex6r",  0.3158,  1.6749,  0.1693],
+         ["ex6l",  0.4787,  1.631,  0.1716],
+
+         ["ex7r",  0.4137,  2.0190,  0.1776],
+         ["ex7l",  0.5651,   1.9782,  0.1797],
+
+         ["ex8",   0.5252,  2.1145,  0.2441, {"selfCollision":false, "afterFireAudioCoef":0.75, "afterFireVisualCoef":0.80, "afterFireVolumeCoef":0.9, "afterFireMufflingCoef":0.80, "exhaustAudioMufflingCoef":0.66, "exhaustAudioGainChange":-4}]
+
+         //rigidifier
+         {"selfCollision":false, "collision":false},
+         ["ex2",  -0.1277, -0.9237,  0.3738],
+         ["ex3",   0.0482, -0.3569,  0.3301],
+         ["ex4",   0.0687,  0.5629,  0.3428],
+         ["ex5",   0.1309,  1.2629,  0.3365],
+         ["ex6",   0.3955,  1.6369,  0.306, {"collision":true}],
+         ["ex7",   0.4878,  1.9837,  0.3068, {"collision":true}],
+         {"group":"none"},
+        ],
+    "beams":[
+          ["id1:", "id2:"],
+          {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1, "beamShortBound":1},
+
+          //main shape
+          {"beamSpring":301000,"beamDamp":30},
+          {"beamDeform":18000,"beamStrength":"FLT_MAX"},
+          {"deformLimitExpansion":1.2},
+          //path
+          ["ex1", "ex2l", {"isExhaust":"mainEngine"}],
+          ["ex2l", "ex3l", {"isExhaust":"mainEngine"}],
+          ["ex3l", "ex4l", {"isExhaust":"mainEngine"}],
+          ["ex4l", "ex5l", {"isExhaust":"mainEngine"}],
+          ["ex5l", "ex6l", {"isExhaust":"mainEngine"}],
+          ["ex6l", "ex8", {"isExhaust":"mainEngine"}],
+
+          //base
+          {"beamDeform":12000,"beamStrength":"FLT_MAX"},
+          ["ex1", "ex2r"],
+          ["ex2r", "ex3r"],
+          ["ex3r", "ex4r"],
+          ["ex4r", "ex5r"],
+          ["ex5r", "ex6r"],
+          ["ex6r", "ex7r"],
+          ["ex7r", "ex8"],
+          ["ex7l", "ex7r"],
+          ["ex6l", "ex6r"],
+          ["ex5l", "ex5r"],
+          ["ex4l", "ex4r"],
+          ["ex3l", "ex3r"],
+          ["ex2l", "ex2r"],
+          //muffler
+          ["ex7r", "ex7"],
+          ["ex7", "ex7l"],
+          ["ex6r", "ex6"],
+          ["ex6", "ex6l"],
+          ["ex6", "ex7"],
+          ["ex7", "ex8"],
+          ["ex6l", "ex7l"],
+          ["ex7l", "ex8"],
+
+          //rigidifier
+          {"beamDeform":9000,"beamStrength":"FLT_MAX"},
+          ["ex6", "ex5"],
+          ["ex5", "ex4"],
+          ["ex4", "ex3"],
+          ["ex3", "ex2"],
+          ["ex2", "ex1"],
+          ["ex5", "ex5l"],
+          ["ex5", "ex5r"],
+          ["ex4", "ex4l"],
+          ["ex4", "ex4r"],
+          ["ex3", "ex3l"],
+          ["ex3", "ex3r"],
+          ["ex2", "ex2l"],
+          ["ex2", "ex2r"],
+
+          //crossing
+          {"beamDeform":6000,"beamStrength":"FLT_MAX"},
+          ["ex2r", "ex3l"],
+          ["ex3r", "ex2l"],
+          ["ex3r", "ex4l"],
+          ["ex3l", "ex4r"],
+          ["ex4r", "ex5l"],
+          ["ex4l", "ex5r"],
+          ["ex5r", "ex6l"],
+          ["ex6r", "ex5l"],
+          ["ex6r", "ex7l"],
+          ["ex7r", "ex6l"],
+          //muffler
+          ["ex7r", "ex6"],
+          ["ex7", "ex6r"],
+          ["ex6l", "ex7"],
+          ["ex7l", "ex6"],
+
+          //rigidifier crossing
+          ["ex2r", "ex3"],
+          ["ex3r", "ex2"],
+          ["ex3r", "ex4"],
+          ["ex3", "ex4r"],
+          ["ex4r", "ex5"],
+          ["ex5r", "ex4"],
+          ["ex5r", "ex6"],
+          ["ex6r", "ex5"],
+          ["ex2l", "ex3"],
+          ["ex2", "ex3l"],
+          ["ex3l", "ex4"],
+          ["ex3", "ex4l"],
+          ["ex4l", "ex5"],
+          ["ex4", "ex5l"],
+          ["ex5l", "ex6"],
+          ["ex5", "ex6l"],
+
+          //tip rigids
+          ["ex8", "ex6r"],
+          ["ex8", "ex6"],
+
+          //attach
+          {"beamSpring":251000,"beamDamp":30},
+          {"beamDeform":7500,"beamStrength":65000},
+          //to engine
+          {"breakGroup":"exhaust_F"},
+          ["ex1", "trb2", {"isExhaust":"mainEngine"}],
+          ["ex1", "trb1"],
+          ["ex1", "e4l"],
+          ["ex1", "e4r"],
+          ["ex1", "e2r"],
+          ["ex1", "e3r"],
+          ["ex1", "e1r"],
+          ["ex1", "e2l"],
+          ["ex1", "e1l"],
+          ["ex1", "e3l"],
+          ["trb2", "ex2"],
+          ["trb2", "ex2l"],
+          ["trb2", "ex2r"],
+          ["trb1", "ex2l"],
+          ["trb1", "ex2r"],
+          ["trb1", "ex2"],
+          ["ex2l", "e2r"],
+          ["ex2r", "e2r"],
+
+          //mid
+          {"beamSpring":35000,"beamDamp":200},
+          {"beamDeform":4000,"beamStrength":15000},
+          {"breakGroup":"exhaust_M"},
+          ["ex4r", "f3l"],
+          ["ex4r", "f8l"],
+          ["ex4r", "f4l"],
+          ["ex4r", "f9l"],
+          ["ex4l", "f3l"],
+          ["ex4l", "f8l"],
+          ["ex4l", "f4l"],
+          ["ex4l", "f9l"],
+          ["ex4r", "f3r"],
+          ["ex4r", "f8r"],
+          ["ex4r", "f4r"],
+          ["ex4r", "f9r"],
+          ["ex4l", "f3r"],
+          ["ex4l", "f8r"],
+          ["ex4l", "f4r"],
+          ["ex4l", "f9r"],
+
+          //rear
+          {"breakGroup":"exhaust_R"},
+          ["ex6l", "r2ll"],
+          ["ex7l", "r2ll"],
+          ["ex7r", "r2ll"],
+          ["ex6r", "r2ll"],
+          ["ex6", "r2ll"],
+          ["ex6l", "r5ll"],
+          ["ex7l", "r5ll"],
+          ["ex7r", "r5ll"],
+          ["ex6r", "r5ll"],
+          ["ex6", "r5ll"],
+          ["ex6", "r2"],
+          ["ex7", "r2"],
+          {"breakGroup":"exhaust_supportBeams"},
+
+          //limiters
+          {"beamPrecompression":0.9, "beamType":"|SUPPORT", "beamLongBound":5},
+          {"beamSpring":401000,"beamDamp":80},
+          {"beamDeform":9000,"beamStrength":65000},
+          ["ex7r", "r6ll"],
+          ["ex7l", "r6ll"],
+          ["ex7r", "r5ll"],
+          ["ex7l", "r5ll"],
+          ["ex6r", "r5ll"],
+          ["ex6l", "r5ll"],
+          ["ex5l", "r4ll"],
+          ["ex5r", "r4ll"],
+          ["ex5l", "r4rr"],
+          ["ex5r", "r4rr"],
+          ["ex4l", "f8l"],
+          ["ex4l", "f9l"],
+          ["ex4r", "f8r"],
+          ["ex4r", "f9r"],
+          ["ex4r", "f9l"],
+          ["ex4r", "f8l"],
+          ["ex4l", "f8r"],
+          ["ex4l", "f9r"],
+          ["ex3l", "f7r"],
+          ["ex3l", "f7l"],
+          ["ex3r", "f7l"],
+          ["ex3r", "f7r"],
+          ["ex2l", "f6r"],
+          ["ex2r", "f6r"],
+          ["ex2l", "f6l"],
+          ["ex2r", "f6l"],
+          ["ex1", "f12rr"]
+
+          //widthwise
+          {"beamPrecompression":0.7},
+          ["ex2r", "f1l"],
+          ["ex2l", "f1r"],
+          ["ex3r", "f2l"],
+          ["ex3l", "f2r"],
+          ["ex4r", "f3l"],
+          ["ex4r", "f4l"],
+          ["ex4l", "f3r"],
+          ["ex4l", "f4r"],
+          ["ex5l", "r1rr"],
+          ["ex5r", "r1ll"],
+          ["ex6l", "r2"],
+          ["ex7l", "r2"],
+          ["ex7l", "r3"],
+
+          //subrame
+          {"beamPrecompression":0.8},
+          {"optional":true},
+          ["ex5r", "rx1l"],
+          ["ex5l", "rx1l"],
+          ["ex5r", "rx2l"],
+          ["ex5l", "rx2l"],
+          ["ex5r", "rx1r"],
+          ["ex5r", "rx2r"]
+
+          //bumper
+          {"beamPrecompression":0.9},
+          ["ex8", "rb2ll"],
+          ["ex8", "rb2l"],
+          ["ex8", "rb3lll"],
+          ["ex8", "rb3l"],
+          ["ex7", "rb3ll"],
+          ["ex7", "rb3l"],
+          ["ex7", "rb2l"],
+          {"breakGroup":""},
+          {"optional":false},
+          {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1, "beamShortBound":1},
+    ],
+
+    "triangles":[
+        ["id1:", "id2:", "id3:"],
+        {"groundModel":"metal"},
+        {"dragCoef":0},
+        {"group":["sunburst2_skid_exhaust_col", "sunburst2_exhaust"]},
+        {"triangleType":"NONCOLLIDABLE"},
+        ["ex1", "ex2r", "ex2l"],
+        ["ex2r", "ex3r", "ex3l"],
+        ["ex2l", "ex2r", "ex3l"],
+        ["ex3l", "ex3r", "ex4l"],
+        ["ex4l", "ex3r", "ex4r"],
+        ["ex4r", "ex5l", "ex4l"],
+        ["ex4r", "ex5r", "ex5l"],
+        ["ex5l", "ex5r", "ex6r"],
+        ["ex6r", "ex6l", "ex5l"],
+        ["ex6l", "ex6r", "ex7r"],
+        ["ex7r", "ex7l", "ex6l"],
+        ["ex7l", "ex7r", "ex8"],
+        ["ex6", "ex6l", "ex7l"],
+        ["ex7l", "ex7", "ex6"],
+        ["ex7", "ex7r", "ex6r"],
+        ["ex6r", "ex6", "ex7"],
+        ["ex7", "ex8", "ex7r"],
+        ["ex7", "ex7l", "ex8"],
+        ["ex6", "ex6r", "ex6l"],
+        {"triangleType":"NORMALTYPE"},
+        ],
+},
+
+}
