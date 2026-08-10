@@ -72,6 +72,7 @@ jobs:
           zip -r ../dist/sunburst2_ej_engines.zip \
             vehicles/ \
             mod_info/ \
+            README.md \
             -x "*.git*"
 
       - name: Create release
